@@ -1,7 +1,7 @@
 // Background Service Worker
 console.log('[Worksheet Extractor] Background service worker active.');
 
-const DEFAULT_API_KEY = 'AQ.Ab8RN6KKnRxP2AdM_U4Szp6laLTfPYPE7NO0rQM_W146bUiHsw';
+const DEFAULT_API_KEY = '';
 const MODELS = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'];
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {

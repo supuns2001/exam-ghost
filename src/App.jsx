@@ -4,6 +4,7 @@ import {
   Copy,
   Check,
   Sparkles,
+  Sliders,
   Settings,
   AlertCircle,
   Download,
@@ -12,19 +13,48 @@ import {
   ChevronUp,
   Zap,
   HelpCircle,
-  MousePointerClick
+  MousePointerClick,
+  Crop,
+  Sun,
+  Moon,
+  EyeOff,
+  ShieldAlert,
+  BookOpen,
+  Key
 } from 'lucide-react';
 import './App.css';
 
-const DEFAULT_API_KEY = '';
+const DEFAULT_API_KEY = 'AQ.Ab8RN6KKnRxP2AdM_U4Szp6laLTfPYPE7NO0rQM_W146bUiHsw';
 const MODELS_TO_TRY = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'];
 
 export default function App() {
   const [apiKey, setApiKey] = useState(DEFAULT_API_KEY);
   const [showSettings, setShowSettings] = useState(false);
   const [activeTab, setActiveTab] = useState(null);
-  const [solverMode, setSolverMode] = useState('full_scan'); // 'full_scan' | 'dom_interactive'
-  const [enableDoubleClick, setEnableDoubleClick] = useState(true);
+  const [theme, setTheme] = useState('dark'); // 'dark' | 'light'
+  
+  // 3 Modes: 'invisible' | 'stealth' | 'explain'
+  const [solverMode, setSolverMode] = useState('stealth');
+
+  // Mode 1: Invisible Toggles
+  const [invisibleAutoFill, setInvisibleAutoFill] = useState(true);
+  const [invisibleClipboardCopy, setInvisibleClipboardCopy] = useState(true);
+  const [invisibleDoubleClick, setInvisibleDoubleClick] = useState(true);
+
+  // Mode 2: Stealth Toggles
+  const [stealthHighlightOnly, setStealthHighlightOnly] = useState(false);
+  const [stealthAutoFill, setStealthAutoFill] = useState(true);
+  const [stealthDoubleClick, setStealthDoubleClick] = useState(true);
+
+  // Mode 3: Explain Toggles
+  const [explainAutoFill, setExplainAutoFill] = useState(true);
+  const [explainSideBanner, setExplainSideBanner] = useState(true);
+  const [explainDetailed, setExplainDetailed] = useState(true);
+
+  // Snip Tool Option
+  const [snipAutoFill, setSnipAutoFill] = useState(true);
+
+  // Full Scan Processing States
   const [isScanning, setIsScanning] = useState(false);
   const [scanStep, setScanStep] = useState(''); // 'scrolling' | 'ai_processing' | 'autofilling' | ''
   const [questionsData, setQuestionsData] = useState(null);
@@ -33,17 +63,64 @@ export default function App() {
   const [copiedAll, setCopiedAll] = useState(false);
   const [expandedExplanation, setExpandedExplanation] = useState({});
   const [autoFillCount, setAutoFillCount] = useState(null);
-  const [enableAutoFill, setEnableAutoFill] = useState(true);
+
+  // Message Quota & License
+  const [usedMessages, setUsedMessages] = useState(32);
+  const [totalMessages, setTotalMessages] = useState(50);
+  const [showLicenseModal, setShowLicenseModal] = useState(false);
+  const [licenseKey, setLicenseKey] = useState('');
+  const [licenseSuccess, setLicenseSuccess] = useState(false);
 
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
       chrome.storage.local.get(
-        ['gemini_api_key', 'enable_autofill', 'solver_mode', 'enable_double_click'],
+        [
+          'gemini_api_key',
+          'theme_mode',
+          'solver_mode',
+          'invisible_autofill',
+          'invisible_clipboard',
+          'invisible_double_click',
+          'stealth_highlight_only',
+          'stealth_autofill',
+          'stealth_double_click',
+          'explain_autofill',
+          'explain_side_banner',
+          'explain_detailed',
+          'snip_auto_fill',
+          'used_messages_count'
+        ],
         (res) => {
-          if (res && res.gemini_api_key) setApiKey(res.gemini_api_key);
-          if (res && typeof res.enable_autofill !== 'undefined') setEnableAutoFill(res.enable_autofill);
-          if (res && res.solver_mode) setSolverMode(res.solver_mode);
-          if (res && typeof res.enable_double_click !== 'undefined') setEnableDoubleClick(res.enable_double_click);
+          if (res) {
+            if (res.gemini_api_key) setApiKey(res.gemini_api_key);
+            if (res.theme_mode) setTheme(res.theme_mode);
+            
+            // Map legacy solver_mode to new 3 modes
+            if (res.solver_mode === 'full_scan') setSolverMode('explain');
+            else if (res.solver_mode === 'dom_interactive') setSolverMode('stealth');
+            else if (res.solver_mode) setSolverMode(res.solver_mode);
+
+            if (typeof res.invisible_autofill !== 'undefined') setInvisibleAutoFill(res.invisible_autofill);
+            if (typeof res.invisible_clipboard !== 'undefined') setInvisibleClipboardCopy(res.invisible_clipboard);
+            if (typeof res.invisible_double_click !== 'undefined') setInvisibleDoubleClick(res.invisible_double_click);
+
+            const autoFillVal = typeof res.stealth_autofill !== 'undefined' ? res.stealth_autofill : true;
+            setStealthAutoFill(autoFillVal);
+            if (autoFillVal) {
+              setStealthHighlightOnly(false);
+              chrome.storage.local.set({ stealth_highlight_only: false });
+            } else {
+              setStealthHighlightOnly(typeof res.stealth_highlight_only !== 'undefined' ? res.stealth_highlight_only : true);
+            }
+            if (typeof res.stealth_double_click !== 'undefined') setStealthDoubleClick(res.stealth_double_click);
+
+            if (typeof res.explain_autofill !== 'undefined') setExplainAutoFill(res.explain_autofill);
+            if (typeof res.explain_side_banner !== 'undefined') setExplainSideBanner(res.explain_side_banner);
+            if (typeof res.explain_detailed !== 'undefined') setExplainDetailed(res.explain_detailed);
+
+            if (typeof res.snip_auto_fill !== 'undefined') setSnipAutoFill(res.snip_auto_fill);
+            if (typeof res.used_messages_count === 'number') setUsedMessages(res.used_messages_count);
+          }
         }
       );
     }
@@ -55,34 +132,58 @@ export default function App() {
         }
       });
     }
+
+    const handleStorageChange = (changes) => {
+      if (changes.solver_mode && changes.solver_mode.newValue) {
+        setSolverMode(changes.solver_mode.newValue);
+      }
+    };
+
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+      chrome.storage.onChanged.addListener(handleStorageChange);
+      return () => {
+        chrome.storage.onChanged.removeListener(handleStorageChange);
+      };
+    }
   }, []);
 
-  const handleSaveApiKey = (newKey) => {
-    setApiKey(newKey);
+  const saveStorage = (key, value) => {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({ gemini_api_key: newKey });
+      chrome.storage.local.set({ [key]: value });
     }
-    setShowSettings(false);
+  };
+
+  const handleToggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    saveStorage('theme_mode', nextTheme);
   };
 
   const handleSetSolverMode = (mode) => {
     setSolverMode(mode);
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({ solver_mode: mode });
+    saveStorage('solver_mode', mode);
+  };
+
+  const handleSaveApiKey = (newKey) => {
+    setApiKey(newKey);
+    saveStorage('gemini_api_key', newKey);
+    setShowSettings(false);
+  };
+
+  const handleTriggerSnip = () => {
+    if (typeof chrome !== 'undefined' && chrome.tabs && activeTab?.id) {
+      chrome.tabs.sendMessage(activeTab.id, { action: 'TRIGGER_SNIP_MODE' });
+      window.close(); // Cleanly close popup so user can immediately snip on page
     }
   };
 
-  const handleToggleDoubleClick = (val) => {
-    setEnableDoubleClick(val);
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({ enable_double_click: val });
-    }
-  };
-
-  const handleToggleAutoFill = (val) => {
-    setEnableAutoFill(val);
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({ enable_autofill: val });
+  const handleActivateLicense = () => {
+    if (licenseKey.trim().length > 5) {
+      setTotalMessages(999);
+      setUsedMessages(0);
+      setLicenseSuccess(true);
+      saveStorage('used_messages_count', 0);
+      setTimeout(() => setShowLicenseModal(false), 1200);
     }
   };
 
@@ -93,6 +194,7 @@ export default function App() {
     }));
   };
 
+  // Full-Page Scan Logic
   const handleStartExtraction = async () => {
     if (!activeTab || !activeTab.id) {
       setError('No active tab detected. Please open a webpage and try again.');
@@ -111,359 +213,114 @@ export default function App() {
     setScanStep('scrolling');
 
     try {
-      // 1. Auto-scroll & extract text
       const pageData = await getTabContent(activeTab.id);
 
       if (!pageData.fullText || pageData.fullText.length < 10) {
         throw new Error('No readable text found on this page. Make sure the worksheet content is visible.');
       }
 
-      // 2. Solve questions & generate explanations via Gemini
       setScanStep('ai_processing');
       const solved = await extractAndSolveWithGemini(pageData.fullText, apiKey);
       setQuestionsData(solved);
 
-      // 3. Auto-fill answers on page if enabled
-      if (enableAutoFill && solved.questions && solved.questions.length > 0) {
+      // Increment usage count
+      setUsedMessages((prev) => {
+        const next = Math.min(totalMessages, prev + (solved.questions?.length || 1));
+        saveStorage('used_messages_count', next);
+        return next;
+      });
+
+      // Auto-Fill Check
+      const shouldAutoFill = (solverMode === 'invisible' && invisibleAutoFill) ||
+                             (solverMode === 'explain' && explainAutoFill) ||
+                             (solverMode === 'stealth' && !stealthHighlightOnly);
+
+      if (shouldAutoFill && solved.questions && solved.questions.length > 0) {
         setScanStep('autofilling');
-        const count = await autoFillTab(activeTab.id, solved.questions);
-        setAutoFillCount(count);
+        try {
+          const fillRes = await sendAutoFillMessage(activeTab.id, solved.questions);
+          if (fillRes && fillRes.success) {
+            setAutoFillCount(fillRes.filledCount);
+          }
+        } catch {
+          // Ignore non-fatal auto fill error
+        }
       }
     } catch (err) {
-      console.error('Extraction failed:', err);
-      setError(err.message || 'Something went wrong during extraction.');
+      setError(err.message || 'An error occurred during worksheet solving.');
     } finally {
       setIsScanning(false);
       setScanStep('');
     }
   };
 
-  const handleManualAutoFill = async () => {
-    if (!activeTab || !activeTab.id || !questionsData?.questions) return;
-    const count = await autoFillTab(activeTab.id, questionsData.questions);
-    setAutoFillCount(count);
-  };
-
-  const autoFillTab = async (tabId, questions) => {
-    try {
-      const res = await new Promise((resolve) => {
-        chrome.tabs.sendMessage(
-          tabId,
-          { action: 'AUTO_FILL_ANSWERS', questions },
-          (response) => {
-            if (chrome.runtime.lastError || !response) {
-              resolve(null);
-            } else {
-              resolve(response);
+  const getTabContent = (tabId) => {
+    return new Promise((resolve, reject) => {
+      chrome.tabs.sendMessage(tabId, { action: 'EXTRACT_QUESTIONS_WITH_SCROLL' }, (res) => {
+        if (chrome.runtime.lastError) {
+          chrome.scripting.executeScript(
+            {
+              target: { tabId },
+              func: () => ({
+                fullText: document.body.innerText,
+                title: document.title,
+                url: window.location.href,
+              }),
+            },
+            (results) => {
+              if (chrome.runtime.lastError || !results || !results[0]) {
+                return reject(new Error('Cannot access page. Please reload the tab.'));
+              }
+              resolve(results[0].result);
             }
-          }
-        );
-      });
-
-      if (res && res.success && typeof res.filledCount === 'number') {
-        return res.filledCount;
-      }
-    } catch (e) {
-      console.warn('Message send failed, using script injection:', e);
-    }
-
-    // Direct injection fallback
-    if (chrome.scripting && chrome.scripting.executeScript) {
-      const injection = await chrome.scripting.executeScript({
-        target: { tabId },
-        args: [questions],
-        func: (qs) => {
-          let count = 0;
-          const cards = Array.from(document.querySelectorAll(
-            '.question-card, article[id^="card_"], div[class*="question-card"], div[class*="question"]'
-          ));
-
-          qs.forEach((q, idx) => {
-            const qClean = (q.question || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-            const qNumClean = (q.number || `Q#${idx + 1}`).replace(/[^0-9]/g, '');
-
-            let targetCard = cards.find(card => {
-              const textElem = card.querySelector('.question-text, h3, h4, p');
-              const cardText = (textElem ? textElem.innerText : card.innerText || '')
-                .trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-              return cardText && (qClean.includes(cardText) || cardText.includes(qClean));
-            });
-
-            if (!targetCard && qNumClean) {
-              targetCard = cards.find(card => {
-                const badge = card.querySelector('.question-number-badge, [class*="number"]');
-                return badge && badge.innerText.replace(/[^0-9]/g, '') === qNumClean;
-              });
-            }
-
-            if (!targetCard && cards[idx]) {
-              targetCard = cards[idx];
-            }
-
-            if (!targetCard) return;
-
-            const targetOptions = Array.isArray(q.correctOptions) && q.correctOptions.length > 0
-              ? q.correctOptions
-              : (q.correctOption ? [q.correctOption] : []);
-            const isMulti = q.isMultiSelect || targetOptions.length > 1 || !!targetCard.querySelector('.multi-option-input');
-
-            if (isMulti && targetOptions.length > 0) {
-              const checkboxes = Array.from(targetCard.querySelectorAll('.multi-option-input, .option-checkbox, input[type="checkbox"]'));
-              if (checkboxes.length > 0) {
-                checkboxes.forEach((cb, cbIdx) => {
-                  const letter = String.fromCharCode(65 + cbIdx);
-                  const label = cb.closest('.option-label, label') || cb.parentElement;
-                  const optLetter = (label?.querySelector('.option-letter, [class*="letter"]')?.innerText || '')
-                    .replace(/[^A-Za-z]/g, '').toUpperCase() || letter;
-                  const optText = (label?.querySelector('.option-text')?.innerText || cb.value || label?.innerText || '')
-                    .replace(/^[A-Za-z][.)]\s*/, '').trim().toLowerCase();
-                  const cbVal = (cb.value || '').trim().toLowerCase();
-
-                  const isMatch = targetOptions.some(opt => {
-                    const o = opt.trim().toUpperCase();
-                    const oLow = opt.trim().toLowerCase();
-                    return o === optLetter ||
-                           o === letter ||
-                           (optText && oLow === optText) ||
-                           (cbVal && oLow === cbVal) ||
-                           (q.answerText && optText && q.answerText.toLowerCase().includes(optText));
-                  });
-
-                  cb.checked = isMatch;
-                  if (label) {
-                    if (isMatch) {
-                      label.classList.add('is-selected');
-                    } else {
-                      label.classList.remove('is-selected');
-                    }
-                  }
-                  cb.dispatchEvent(new Event('change', { bubbles: true }));
-                });
-              } else {
-                const labels = Array.from(targetCard.querySelectorAll('.option-label, label, button[class*="option"]'));
-                labels.forEach((label, lIdx) => {
-                  const letter = String.fromCharCode(65 + lIdx);
-                  const optLetter = (label.querySelector('.option-letter, [class*="letter"]')?.innerText || '')
-                    .replace(/[^A-Za-z]/g, '').toUpperCase() || letter;
-                  const optText = (label.querySelector('.option-text')?.innerText || label.innerText || '')
-                    .replace(/^[A-Za-z][.)]\s*/, '').trim().toLowerCase();
-
-                  const isMatch = targetOptions.some(opt => {
-                    const o = opt.trim().toUpperCase();
-                    const oLow = opt.trim().toLowerCase();
-                    return o === optLetter || o === letter || (optText && oLow === optText);
-                  });
-
-                  if (isMatch) {
-                    label.classList.add('is-selected');
-                    label.click();
-                  } else {
-                    label.classList.remove('is-selected');
-                  }
-                });
-              }
-              targetCard.classList.add('answered');
-              count++;
-            } else if (q.type === 'mcq' || targetOptions.length > 0) {
-              const labels = Array.from(targetCard.querySelectorAll(
-                '.option-label, label, button[class*="option"]'
-              ));
-
-              let matchedLabel = null;
-              const singleOption = targetOptions[0] || q.correctOption;
-              if (singleOption) {
-                matchedLabel = labels.find(label => {
-                  const letter = (label.querySelector('.option-letter, [class*="letter"]')?.innerText || label.innerText || '').toUpperCase();
-                  return letter.startsWith(singleOption) || letter.includes(`${singleOption})`) || letter.includes(`${singleOption}.`);
-                });
-              }
-
-              if (!matchedLabel && q.answerText) {
-                const cleanAns = q.answerText.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-                matchedLabel = labels.find(label => {
-                  const optText = (label.querySelector('.option-text')?.innerText || label.innerText || '')
-                    .trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-                  return optText && (optText.includes(cleanAns) || cleanAns.includes(optText));
-                });
-              }
-
-              if (matchedLabel) {
-                const checkbox = matchedLabel.querySelector('.option-checkbox, input[type="checkbox"], input[type="radio"]');
-                if (checkbox) {
-                  targetCard.querySelectorAll('.option-checkbox, input[type="checkbox"]').forEach(cb => {
-                    if (cb !== checkbox) {
-                      cb.checked = false;
-                      cb.closest('.option-label')?.classList.remove('is-selected');
-                    }
-                  });
-
-                  checkbox.checked = true;
-                  matchedLabel.classList.add('is-selected');
-                  checkbox.dispatchEvent(new Event('change', { bubbles: true }));
-                } else {
-                  matchedLabel.classList.add('is-selected');
-                  matchedLabel.click();
-                }
-                targetCard.classList.add('answered');
-                count++;
-              }
-            } else {
-              const input = targetCard.querySelector('.text-input-field, input[type="text"], input:not([type]), textarea');
-              if (input && q.answerText) {
-                const valueSetter = Object.getOwnPropertyDescriptor(input, 'value')?.set;
-                const prototype = Object.getPrototypeOf(input);
-                const prototypeValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
-                if (prototypeValueSetter && valueSetter !== prototypeValueSetter) {
-                  prototypeValueSetter.call(input, q.answerText);
-                } else if (valueSetter) {
-                  valueSetter.call(input, q.answerText);
-                } else {
-                  input.value = q.answerText;
-                }
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-                input.dispatchEvent(new Event('change', { bubbles: true }));
-                targetCard.classList.add('answered');
-                count++;
-              }
-            }
-          });
-
-          // Update worksheet progress
-          const answeredElem = document.getElementById('answeredCount');
-          const totalElem = document.getElementById('totalQuestionsCount');
-          const progBar = document.getElementById('progressBar');
-          const progPct = document.getElementById('progressPercentage');
-          if (answeredElem && totalElem) {
-            const answered = document.querySelectorAll('.question-card.answered').length;
-            answeredElem.textContent = answered;
-            const total = parseInt(totalElem.textContent) || cards.length;
-            const pct = Math.round((answered / total) * 100);
-            if (progBar) progBar.style.width = pct + '%';
-            if (progPct) progPct.textContent = pct + '%';
-          }
-
-          return count;
+          );
+        } else {
+          resolve(res);
         }
       });
-
-      if (injection && typeof injection[0]?.result === 'number') {
-        return injection[0].result;
-      }
-    }
-
-    return 0;
+    });
   };
 
-  const getTabContent = async (tabId) => {
-    try {
-      const res = await new Promise((resolve) => {
-        chrome.tabs.sendMessage(tabId, { action: 'EXTRACT_QUESTIONS_WITH_SCROLL' }, (response) => {
-          if (chrome.runtime.lastError || !response) {
-            resolve(null);
-          } else {
-            resolve(response);
-          }
-        });
+  const sendAutoFillMessage = (tabId, questions) => {
+    return new Promise((resolve) => {
+      chrome.tabs.sendMessage(tabId, { action: 'AUTO_FILL_ANSWERS', questions }, (res) => {
+        if (chrome.runtime.lastError) {
+          resolve({ success: false });
+        } else {
+          resolve(res || { success: true });
+        }
       });
-
-      if (res && res.success) return res;
-    } catch (e) {
-      console.warn('Message send failed, falling back to scripting API:', e);
-    }
-
-    if (chrome.scripting && chrome.scripting.executeScript) {
-      const injection = await chrome.scripting.executeScript({
-        target: { tabId },
-        func: async () => {
-          const initialY = window.scrollY;
-          const totalH = Math.max(
-            document.body.scrollHeight,
-            document.documentElement.scrollHeight,
-            document.body.offsetHeight
-          );
-          let y = 0;
-          const step = Math.min(window.innerHeight * 0.75, 500);
-
-          while (y < totalH) {
-            y += step;
-            window.scrollTo({ top: y, behavior: 'smooth' });
-            await new Promise((r) => setTimeout(r, 120));
-          }
-
-          await new Promise((r) => setTimeout(r, 400));
-          window.scrollTo({ top: initialY, behavior: 'smooth' });
-
-          const clone = document.body.cloneNode(true);
-          ['script', 'style', 'noscript', 'svg', 'canvas', 'iframe'].forEach((tag) => {
-            clone.querySelectorAll(tag).forEach((el) => el.remove());
-          });
-
-          const fullText = (clone.innerText || clone.textContent || '')
-            .split('\n')
-            .map((l) => l.trim())
-            .filter((l) => l.length > 0)
-            .join('\n');
-
-          return {
-            title: document.title,
-            url: window.location.href,
-            fullText,
-          };
-        },
-      });
-
-      if (injection && injection[0]?.result) {
-        return injection[0].result;
-      }
-    }
-
-    throw new Error('Could not access page contents. If this is a local file (file:///), ensure "Allow access to file URLs" is enabled in chrome://extensions.');
+    });
   };
 
-  const extractAndSolveWithGemini = async (text, key) => {
-    const prompt = `You are a world-class academic tutor and test solver.
-Analyze the following text extracted from a quiz or worksheet webpage.
-Your job is to:
-1. Extract ALL questions and their available choices.
-2. Accurately solve each question and predict the correct answer.
-3. Provide a clear, concise step-by-step explanation for each question.
+  const extractAndSolveWithGemini = async (rawText, key) => {
+    const prompt = `You are an elite academic test solving engine.
+Analyze the following test/quiz page text. Detect all questions, choices, and solve them with complete accuracy.
 
-Output strictly valid JSON with this exact schema (no markdown blocks, no text outside JSON):
+Return strictly valid JSON:
 {
-  "total": <number of questions found>,
-  "worksheetTitle": "<worksheet title or subject>",
+  "worksheetTitle": "<Title or Subject>",
   "questions": [
     {
       "id": 1,
-      "number": "Q#1",
-      "type": "mcq" | "multi" | "short_answer" | "true_false",
-      "subject": "MATH" | "SCIENCE" | "ENGLISH" | "GENERAL",
-      "part": "PART 1" | "PART 2" | null,
-      "isMultiSelect": false, // Set to true if question allows or has multiple correct answers
-      "question": "<full question text without options>",
+      "number": "1",
+      "subject": "General",
+      "type": "mcq", // "mcq" | "multi" | "short"
+      "question": "<Exact question text>",
       "options": [
-        { "label": "A", "text": "1/4" },
-        { "label": "B", "text": "4/5" },
-        { "label": "C", "text": "3/4" },
-        { "label": "D", "text": "1/2" }
+        { "label": "A", "text": "<Option A text>" },
+        { "label": "B", "text": "<Option B text>" }
       ],
-      "correctOption": "C", // Primary or first correct option letter if MCQ, null if short answer
-      "correctOptions": ["C"], // Array of ALL correct option letters (e.g. ["A", "C"] if multi-select, or ["C"] if single), empty [] if short answer
-      "answerText": "3/4",
-      "explanation": "3 divided by 4 equals 0.75, which matches 75/100."
+      "correctOption": "A", // null if short answer
+      "correctOptions": ["A"],
+      "answerText": "<Exact correct answer text>",
+      "explanation": "<Clear 1-2 sentence rationale>"
     }
   ]
 }
 
-Important Instructions:
-- For Short Answer: Calculate the exact numeric or textual answer for "answerText" (e.g. "$10" or "10" for change, "Gravity" or "Gravitational force" for force). "correctOption" should be null and "correctOptions" should be [].
-- For Single-Choice MCQ: Set "correctOption" to the correct letter (e.g. "C"), and "correctOptions" to ["C"].
-- For Multi-Select (questions asking to "select all that apply" or having multiple answers): Set "isMultiSelect": true, set "correctOptions" to all correct letters (e.g. ["A", "C", "D"]), and "correctOption" to the first letter.
-- In "explanation", provide a helpful 1-2 sentence breakdown explaining why this answer is correct.
-- Return pure JSON only.
-
-Webpage content:
-${text.slice(0, 25000)}`;
+Page Content:
+${rawText.substring(0, 35000)}`;
 
     let lastError = null;
 
@@ -483,23 +340,23 @@ ${text.slice(0, 25000)}`;
         });
 
         if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error?.message || `API error ${response.status}`);
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error?.message || `API HTTP ${response.status}`);
         }
 
         const data = await response.json();
-        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!rawText) throw new Error('No content returned from AI model.');
+        const rawResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!rawResponse) throw new Error('No content returned from AI model.');
 
-        const cleanedJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const cleanedJson = rawResponse.replace(/```json/g, '').replace(/```/g, '').trim();
         return JSON.parse(cleanedJson);
       } catch (err) {
-        console.warn(`Model ${model} failed, trying next fallback:`, err);
+        console.warn(`Model ${model} failed:`, err);
         lastError = err;
       }
     }
 
-    throw lastError || new Error('Failed to analyze worksheet with Gemini API.');
+    throw lastError || new Error('Failed to solve worksheet with Gemini API.');
   };
 
   const copyToClipboard = (text, id) => {
@@ -541,26 +398,35 @@ ${text.slice(0, 25000)}`;
   };
 
   return (
-    <div className="extractor-app">
+    <div className={`extractor-app ${theme === 'light' ? 'light-theme' : ''}`}>
       {/* Top Header */}
       <header className="header">
         <div className="header-brand">
           <div className="brand-icon">
-            <Sparkles size={18} />
+            <Sparkles size={19} />
           </div>
           <div>
-            <h1 className="brand-title">Worksheet AI Solver</h1>
-            <span className="brand-subtitle">Gemini 3.1 Flash-Lite</span>
+            <h1 className="brand-title">Study Assistant</h1>
+            <span className="brand-subtitle">Gemini 3.5 Flash-Lite</span>
           </div>
         </div>
 
-        <button
-          className="icon-btn"
-          title="API Settings"
-          onClick={() => setShowSettings(!showSettings)}
-        >
-          <Settings size={18} />
-        </button>
+        <div className="header-controls">
+          <button
+            className="icon-btn"
+            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+            onClick={handleToggleTheme}
+          >
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+          <button
+            className="icon-btn"
+            title="Settings & API Key"
+            onClick={() => setShowSettings(!showSettings)}
+          >
+            <Sliders size={16} />
+          </button>
+        </div>
       </header>
 
       {/* Settings Modal */}
@@ -568,6 +434,7 @@ ${text.slice(0, 25000)}`;
         <div className="settings-panel">
           <div className="settings-header">
             <h3>Configuration</h3>
+            <button className="icon-btn" style={{ width: 22, height: 22 }} onClick={() => setShowSettings(false)}>✕</button>
           </div>
           <div className="settings-body">
             <label>Gemini API Key</label>
@@ -595,284 +462,588 @@ ${text.slice(0, 25000)}`;
         </div>
       )}
 
-      {/* Mode Selector Tabs */}
+      {/* License Modal */}
+      {showLicenseModal && (
+        <div className="settings-panel">
+          <div className="settings-header">
+            <h3>Activate License</h3>
+            <button className="icon-btn" style={{ width: 22, height: 22 }} onClick={() => setShowLicenseModal(false)}>✕</button>
+          </div>
+          <div className="settings-body">
+            <label>License Key</label>
+            <input
+              type="text"
+              value={licenseKey}
+              onChange={(e) => setLicenseKey(e.target.value)}
+              placeholder="XXXX-XXXX-XXXX-XXXX"
+            />
+            <div className="settings-actions">
+              <button
+                className="btn-primary"
+                style={{ width: '100%' }}
+                onClick={handleActivateLicense}
+              >
+                {licenseSuccess ? '✓ License Activated!' : 'Activate License'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mode Segmented Tabs: Invisible | Stealth | Explain */}
       <div className="mode-segmented-control">
         <button
-          className={`mode-tab ${solverMode === 'full_scan' ? 'active' : ''}`}
-          onClick={() => handleSetSolverMode('full_scan')}
+          className={`mode-tab ${solverMode === 'invisible' ? 'active' : ''}`}
+          onClick={() => handleSetSolverMode('invisible')}
+          title="Switch to Invisible Mode (Shortcut: Alt + 1)"
         >
-          <Sparkles size={14} />
-          <span>Full-Page Scan</span>
+          <EyeOff size={14} />
+          <span>Invisible</span>
+          <span className="kbd-badge" style={{ fontSize: '9px', padding: '1px 4px', opacity: 0.85 }}>Alt+1</span>
         </button>
         <button
-          className={`mode-tab ${solverMode === 'dom_interactive' ? 'active' : ''}`}
-          onClick={() => handleSetSolverMode('dom_interactive')}
+          className={`mode-tab ${solverMode === 'stealth' ? 'active' : ''}`}
+          onClick={() => handleSetSolverMode('stealth')}
+          title="Switch to Stealth Mode (Shortcut: Alt + 2)"
         >
-          <MousePointerClick size={14} />
-          <span>Double-Click DOM</span>
+          <ShieldAlert size={14} />
+          <span>Stealth</span>
+          <span className="kbd-badge" style={{ fontSize: '9px', padding: '1px 4px', opacity: 0.85 }}>Alt+2</span>
+        </button>
+        <button
+          className={`mode-tab ${solverMode === 'explain' ? 'active' : ''}`}
+          onClick={() => handleSetSolverMode('explain')}
+          title="Switch to Explain Mode (Shortcut: Alt + 3)"
+        >
+          <BookOpen size={14} />
+          <span>Explain</span>
+          <span className="kbd-badge" style={{ fontSize: '9px', padding: '1px 4px', opacity: 0.85 }}>Alt+3</span>
         </button>
       </div>
 
-      {/* Active Tab Preview */}
+      {/* Target Page Preview Card */}
       <div className="tab-card">
-        <div className="tab-info">
-          <span className="tab-label">Target Page</span>
-          <div className="tab-title" title={activeTab?.title || 'No active tab'}>
-            {activeTab?.title || 'Detecting Active Tab...'}
-          </div>
-          <div className="tab-url">{activeTab?.url || ''}</div>
+        <span className="tab-label">Target Page</span>
+        <div className="tab-title" title={activeTab?.title || 'No active tab'}>
+          {activeTab?.title || 'Detecting Active Tab...'}
         </div>
+        <div className="tab-url">{activeTab?.url || ''}</div>
       </div>
 
-      {/* Mode 1: Full-Page Scan Mode */}
-      {solverMode === 'full_scan' && (
+      {/* ==================== MODE 1: INVISIBLE ==================== */}
+      {solverMode === 'invisible' && (
         <>
+          <div className="status-badge" style={{ color: '#a5b4fc', borderColor: 'rgba(99, 102, 241, 0.25)', background: 'rgba(99, 102, 241, 0.08)' }}>
+            <span className="status-dot pulsating" style={{ backgroundColor: '#818cf8' }}></span>
+            <span>Invisible Ghost Mode Ready (Zero Screen Traces)</span>
+          </div>
+
           <div className="feature-toggle-card">
-            <label className="toggle-label">
+            <div className="toggle-info">
+              <span className="toggle-title">Silent Auto-Fill on Webpage</span>
+              <span className="toggle-desc">No floating banner or toasts; silently checks choices directly</span>
+            </div>
+            <label className="switch-wrapper">
               <input
                 type="checkbox"
-                checked={enableAutoFill}
-                onChange={(e) => handleToggleAutoFill(e.target.checked)}
+                className="switch-input"
+                checked={invisibleAutoFill}
+                onChange={(e) => {
+                  setInvisibleAutoFill(e.target.checked);
+                  saveStorage('invisible_autofill', e.target.checked);
+                }}
               />
-              <div className="toggle-text">
-                <span className="toggle-title">
-                  <Zap size={14} className="zap-icon" /> Auto-Fill Answers on Webpage
-                </span>
-                <span className="toggle-desc">
-                  Auto-selects checkboxes & types short answers on the live tab
-                </span>
-              </div>
+              <span className="switch-slider"></span>
             </label>
           </div>
 
-          <div className="action-section">
+          <div className="feature-toggle-card">
+            <div className="toggle-info">
+              <span className="toggle-title">Auto-Copy Answer to Clipboard</span>
+              <span className="toggle-desc">Silently copies the exact answer text to clipboard on solve</span>
+            </div>
+            <label className="switch-wrapper">
+              <input
+                type="checkbox"
+                className="switch-input"
+                checked={invisibleClipboardCopy}
+                onChange={(e) => {
+                  setInvisibleClipboardCopy(e.target.checked);
+                  saveStorage('invisible_clipboard', e.target.checked);
+                }}
+              />
+              <span className="switch-slider"></span>
+            </label>
+          </div>
+
+          <div className="feature-toggle-card">
+            <div className="toggle-info">
+              <span className="toggle-title">Silent Double-Click Solver</span>
+              <span className="toggle-desc">Double-click on any question card silently ticks the answer</span>
+            </div>
+            <label className="switch-wrapper">
+              <input
+                type="checkbox"
+                className="switch-input"
+                checked={invisibleDoubleClick}
+                onChange={(e) => {
+                  setInvisibleDoubleClick(e.target.checked);
+                  saveStorage('invisible_double_click', e.target.checked);
+                }}
+              />
+              <span className="switch-slider"></span>
+            </label>
+          </div>
+
+          <button
+            className={`start-btn ${isScanning ? 'scanning' : ''}`}
+            onClick={handleStartExtraction}
+            disabled={isScanning}
+          >
+            {isScanning ? (
+              <>
+                <div className="spinner"></div>
+                <span>Silent Scanning Page...</span>
+              </>
+            ) : (
+              <>
+                <Play size={16} fill="currentColor" />
+                <span>Scan page & silent answer</span>
+              </>
+            )}
+          </button>
+
+          {/* Snip Hero Card */}
+          <div className="snip-card">
+            <div className="snip-card-header">
+              <div className="snip-card-icon">
+                <Crop size={18} />
+              </div>
+              <div className="snip-card-details">
+                <h4>Snip a region</h4>
+                <p>Drag a box over a diagram, an image or text you can't select.</p>
+              </div>
+            </div>
             <button
-              className={`start-btn ${isScanning ? 'scanning' : ''}`}
-              onClick={handleStartExtraction}
-              disabled={isScanning}
+              className="snip-action-btn"
+              onClick={handleTriggerSnip}
             >
-              {isScanning ? (
-                <>
-                  <div className="spinner"></div>
-                  <span>
-                    {scanStep === 'scrolling' && 'Auto-Scrolling Page...'}
-                    {scanStep === 'ai_processing' && 'Solving Questions & Explanations...'}
-                    {scanStep === 'autofilling' && 'Auto-Filling Live Page...'}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Play size={18} fill="currentColor" />
-                  <span>Detect & Solve Worksheet</span>
-                </>
-              )}
+              <span>Launch snip tool</span>
+              <span className="kbd-badge">Alt</span>
+              <span className="kbd-badge">S</span>
             </button>
           </div>
 
-          {typeof autoFillCount === 'number' && (
-            <div className={autoFillCount > 0 ? 'success-banner' : 'warning-banner'}>
-              {autoFillCount > 0 ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-              <span>
-                {autoFillCount > 0
-                  ? `✓ ${autoFillCount} of ${questionsData?.questions?.length || autoFillCount} answers auto-filled on webpage!`
-                  : 'Could not auto-fill. Click "Auto-Fill Webpage" below to retry.'}
-              </span>
-            </div>
-          )}
-
-          {error && (
-            <div className="error-banner">
-              <AlertCircle size={18} />
-              <div className="error-text">
-                <strong>Extraction Error</strong>
-                <p>{error}</p>
-              </div>
-            </div>
-          )}
-
-          {questionsData && (
-            <div className="results-container">
-              <div className="results-header">
-                <div className="results-meta">
-                  <span className="results-count">
-                    {questionsData.questions?.length || 0} Questions Solved
-                  </span>
-                  {questionsData.worksheetTitle && (
-                    <span className="worksheet-name">{questionsData.worksheetTitle}</span>
-                  )}
-                </div>
-
-                <div className="results-actions">
-                  <button
-                    className="action-pill-btn highlight-pill"
-                    onClick={handleManualAutoFill}
-                    title="Trigger auto-fill on current tab"
-                  >
-                    <MousePointerClick size={14} />
-                    <span>Auto-Fill Page</span>
-                  </button>
-                  <button
-                    className="action-pill-btn"
-                    onClick={copyAllQuestionsAndAnswers}
-                    title="Copy all questions, answers & explanations"
-                  >
-                    {copiedAll ? <Check size={14} /> : <Copy size={14} />}
-                    <span>{copiedAll ? 'Copied' : 'Copy All'}</span>
-                  </button>
-                  <button
-                    className="action-pill-btn"
-                    onClick={exportAsJson}
-                    title="Export as JSON"
-                  >
-                    <Download size={14} />
-                    <span>JSON</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="questions-list">
-                {questionsData.questions?.map((q, idx) => (
-                  <div key={q.id || idx} className="question-card">
-                    <div className="question-card-header">
-                      <div className="badges-group">
-                        <span className="badge badge-number">{q.number || `Q#${idx + 1}`}</span>
-                        {q.part && <span className="badge badge-part">{q.part}</span>}
-                        {q.subject && (
-                          <span className={`badge badge-subject ${q.subject.toLowerCase()}`}>
-                            {q.subject}
-                          </span>
-                        )}
-                        <span className="badge badge-type">
-                          {q.isMultiSelect || (q.correctOptions && q.correctOptions.length > 1) || q.type === 'multi'
-                            ? 'Multi-Select'
-                            : (q.type === 'mcq' ? 'MCQ' : 'Short Answer')}
-                        </span>
-                      </div>
-
-                      <button
-                        className="copy-card-btn"
-                        title="Copy this question & answer"
-                        onClick={() => {
-                          let text = `${q.number || `Q#${idx + 1}`}: ${q.question}`;
-                          if (q.options?.length > 0) {
-                            text += '\n' + q.options.map((o) => `${o.label}) ${o.text}`).join('\n');
-                          }
-                          const ansStr = Array.isArray(q.correctOptions) && q.correctOptions.length > 1
-                            ? q.correctOptions.join(', ')
-                            : (q.correctOption ? `${q.correctOption}) ` : '') + q.answerText;
-                          text += `\nAnswer: ${ansStr}`;
-                          if (q.explanation) text += `\nExplanation: ${q.explanation}`;
-                          copyToClipboard(text, q.id || idx);
-                        }}
-                      >
-                        {copiedId === (q.id || idx) ? <Check size={14} /> : <Copy size={14} />}
-                      </button>
-                    </div>
-
-                    <div className="question-text">{q.question}</div>
-
-                    {q.options && q.options.length > 0 && (
-                      <div className="options-grid">
-                        {q.options.map((opt, optIdx) => {
-                          const isCorrect = (Array.isArray(q.correctOptions) && q.correctOptions.includes(opt.label)) || q.correctOption === opt.label;
-                          return (
-                            <div
-                              key={optIdx}
-                              className={`option-item ${isCorrect ? 'option-correct' : ''}`}
-                            >
-                              <span className={`option-label ${isCorrect ? 'label-correct' : ''}`}>
-                                {opt.label}
-                              </span>
-                              <span className="option-text">{opt.text}</span>
-                              {isCorrect && <Check size={13} className="correct-check-icon" />}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {q.type !== 'mcq' && q.answerText && (
-                      <div className="short-answer-box">
-                        <span className="answer-label">Correct Answer:</span>
-                        <span className="answer-value">{q.answerText}</span>
-                      </div>
-                    )}
-
-                    {q.explanation && (
-                      <div className="explanation-wrapper">
-                        <button
-                          className="explanation-toggle-btn"
-                          onClick={() => toggleExplanation(q.id || idx)}
-                        >
-                          <div className="explanation-toggle-left">
-                            <HelpCircle size={13} />
-                            <span>Explanation</span>
-                          </div>
-                          {expandedExplanation[q.id || idx] ? (
-                            <ChevronUp size={14} />
-                          ) : (
-                            <ChevronDown size={14} />
-                          )}
-                        </button>
-
-                        {expandedExplanation[q.id || idx] && (
-                          <div className="explanation-content">
-                            <p>{q.explanation}</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Mode 2: Interactive Double-Click DOM Solver */}
-      {solverMode === 'dom_interactive' && (
-        <div className="interactive-mode-container">
-          <div className="interactive-status-badge">
-            <span className="status-dot pulsating"></span>
-            <span>Interactive DOM Solver Ready</span>
-          </div>
-
-          <div className="feature-toggle-card">
-            <label className="toggle-label">
-              <input
-                type="checkbox"
-                checked={enableDoubleClick}
-                onChange={(e) => handleToggleDoubleClick(e.target.checked)}
-              />
-              <div className="toggle-text">
-                <span className="toggle-title">
-                  <MousePointerClick size={14} className="zap-icon" /> Double-Click Solver Enabled
-                </span>
-                <span className="toggle-desc">
-                  Double-click directly on any question card on your worksheet tab
-                </span>
-              </div>
-            </label>
-          </div>
-
           <div className="interactive-instructions-card">
-            <h4>💡 How to use Double-Click Solver:</h4>
+            <h4>How Invisible Mode Works:</h4>
             <div className="instruction-step">
               <div className="step-num">1</div>
-              <p>Go to your open worksheet tab.</p>
+              <p>100% undetectable — no side HUD, no popups, and no visible overlays.</p>
             </div>
             <div className="instruction-step">
               <div className="step-num">2</div>
-              <p><strong>Double-click</strong> on any question card you want to solve.</p>
+              <p>Double-click any question card to silently tick the correct option.</p>
             </div>
             <div className="instruction-step">
               <div className="step-num">3</div>
-              <p>The card will pulse blue (⚡ Solving), then turn green with the answer auto-checked or typed in!</p>
+              <p>Answer text is copied straight to your clipboard ready to paste.</p>
             </div>
+          </div>
+        </>
+      )}
+
+      {/* ==================== MODE 2: STEALTH ==================== */}
+      {solverMode === 'stealth' && (
+        <>
+          <div className="status-badge">
+            <span className="status-dot pulsating"></span>
+            <span>Stealth Solver is Ready</span>
+          </div>
+
+          <div className={`feature-toggle-card ${stealthAutoFill ? 'toggle-card-disabled' : ''}`}>
+            <div className="toggle-info">
+              <span className="toggle-title">Highlight correct option only</span>
+              <span className="toggle-desc">
+                {stealthAutoFill
+                  ? 'Disabled while Auto-fill is active (hints not needed)'
+                  : 'Marks the right option subtly so you can choose it yourself'}
+              </span>
+            </div>
+            <label className={`switch-wrapper ${stealthAutoFill ? 'switch-disabled' : ''}`}>
+              <input
+                type="checkbox"
+                className="switch-input"
+                checked={!stealthAutoFill && stealthHighlightOnly}
+                disabled={stealthAutoFill}
+                onChange={(e) => {
+                  if (!stealthAutoFill) {
+                    setStealthHighlightOnly(e.target.checked);
+                    saveStorage('stealth_highlight_only', e.target.checked);
+                  }
+                }}
+              />
+              <span className="switch-slider"></span>
+            </label>
+          </div>
+
+          <div className="feature-toggle-card">
+            <div className="toggle-info">
+              <span className="toggle-title">Auto-fill answers & text fields</span>
+              <span className="toggle-desc">Automatically selects answers and fills inputs without banners</span>
+            </div>
+            <label className="switch-wrapper">
+              <input
+                type="checkbox"
+                className="switch-input"
+                checked={stealthAutoFill}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setStealthAutoFill(val);
+                  saveStorage('stealth_autofill', val);
+                  if (val) {
+                    setStealthHighlightOnly(false);
+                    saveStorage('stealth_highlight_only', false);
+                  } else {
+                    // When auto-fill is turned OFF, turn ON hints only
+                    setStealthHighlightOnly(true);
+                    saveStorage('stealth_highlight_only', true);
+                  }
+                }}
+              />
+              <span className="switch-slider"></span>
+            </label>
+          </div>
+
+          <div className="feature-toggle-card">
+            <div className="toggle-info">
+              <span className="toggle-title">Double-click a question</span>
+              <span className="toggle-desc">Double-click any question card on your page to get its answer</span>
+            </div>
+            <label className="switch-wrapper">
+              <input
+                type="checkbox"
+                className="switch-input"
+                checked={stealthDoubleClick}
+                onChange={(e) => {
+                  setStealthDoubleClick(e.target.checked);
+                  saveStorage('stealth_double_click', e.target.checked);
+                }}
+              />
+              <span className="switch-slider"></span>
+            </label>
+          </div>
+
+          {/* Snip Hero Card */}
+          <div className="snip-card">
+            <div className="snip-card-header">
+              <div className="snip-card-icon">
+                <Crop size={18} />
+              </div>
+              <div className="snip-card-details">
+                <h4>Snip a region</h4>
+                <p>Drag a box over a diagram, an image or text you can't select.</p>
+              </div>
+            </div>
+            <button
+              className="snip-action-btn"
+              onClick={handleTriggerSnip}
+            >
+              <span>Launch snip tool</span>
+              <span className="kbd-badge">Alt</span>
+              <span className="kbd-badge">S</span>
+            </button>
+          </div>
+
+          <div className="interactive-instructions-card">
+            <h4>HOW IT WORKS:</h4>
+            <div className="instruction-step">
+              <div className="step-num">1</div>
+              <p>Open your page and double-click a question card.</p>
+            </div>
+            <div className="instruction-step">
+              <div className="step-num">2</div>
+              <p>MCQ choices are marked subtly with a green check (✓).</p>
+            </div>
+            <div className="instruction-step">
+              <div className="step-num">3</div>
+              <p>Text fields and textareas are automatically typed in without any banners!</p>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ==================== MODE 3: EXPLAIN ==================== */}
+      {solverMode === 'explain' && (
+        <>
+          <div className="status-badge" style={{ color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.25)', background: 'rgba(56, 189, 248, 0.08)' }}>
+            <span className="status-dot pulsating" style={{ backgroundColor: '#38bdf8' }}></span>
+            <span>Study Explainer HUD Active</span>
+          </div>
+
+          <div className="feature-toggle-card">
+            <div className="toggle-info">
+              <span className="toggle-title">Show answers on the page</span>
+              <span className="toggle-desc">Highlights and auto-fills the right option beside each question</span>
+            </div>
+            <label className="switch-wrapper">
+              <input
+                type="checkbox"
+                className="switch-input"
+                checked={explainAutoFill}
+                onChange={(e) => {
+                  setExplainAutoFill(e.target.checked);
+                  saveStorage('explain_autofill', e.target.checked);
+                }}
+              />
+              <span className="switch-slider"></span>
+            </label>
+          </div>
+
+          <div className="feature-toggle-card">
+            <div className="toggle-info">
+              <span className="toggle-title">Floating answer card (Side Banner)</span>
+              <span className="toggle-desc">A small card slides in on the right with the answer and reason</span>
+            </div>
+            <label className="switch-wrapper">
+              <input
+                type="checkbox"
+                className="switch-input"
+                checked={explainSideBanner}
+                onChange={(e) => {
+                  setExplainSideBanner(e.target.checked);
+                  saveStorage('explain_side_banner', e.target.checked);
+                }}
+              />
+              <span className="switch-slider"></span>
+            </label>
+          </div>
+
+          <div className="feature-toggle-card">
+            <div className="toggle-info">
+              <span className="toggle-title">Add detailed explanation</span>
+              <span className="toggle-desc">Two or three sentences on why the answer is right</span>
+            </div>
+            <label className="switch-wrapper">
+              <input
+                type="checkbox"
+                className="switch-input"
+                checked={explainDetailed}
+                onChange={(e) => {
+                  setExplainDetailed(e.target.checked);
+                  saveStorage('explain_detailed', e.target.checked);
+                }}
+              />
+              <span className="switch-slider"></span>
+            </label>
+          </div>
+
+          {/* Snip Hero Card */}
+          <div className="snip-card">
+            <div className="snip-card-header">
+              <div className="snip-card-icon">
+                <Crop size={18} />
+              </div>
+              <div className="snip-card-details">
+                <h4>Snip a region</h4>
+                <p>Drag a box over a diagram, an image or text you can't select.</p>
+              </div>
+            </div>
+            <button
+              className="snip-action-btn"
+              onClick={handleTriggerSnip}
+            >
+              <span>Launch snip tool</span>
+              <span className="kbd-badge">Alt</span>
+              <span className="kbd-badge">S</span>
+            </button>
+          </div>
+
+          <button
+            className={`start-btn ${isScanning ? 'scanning' : ''}`}
+            onClick={handleStartExtraction}
+            disabled={isScanning}
+          >
+            {isScanning ? (
+              <>
+                <div className="spinner"></div>
+                <span>
+                  {scanStep === 'scrolling' && 'Auto-Scrolling Page...'}
+                  {scanStep === 'ai_processing' && 'Solving Questions & Explanations...'}
+                  {scanStep === 'autofilling' && 'Auto-Filling Live Page...'}
+                </span>
+              </>
+            ) : (
+              <>
+                <Play size={16} fill="currentColor" />
+                <span>Scan page & answer</span>
+              </>
+            )}
+          </button>
+        </>
+      )}
+
+      {/* Auto-Fill Count Alert */}
+      {typeof autoFillCount === 'number' && (
+        <div className={autoFillCount > 0 ? 'success-banner' : 'warning-banner'}>
+          {autoFillCount > 0 ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+          <span>
+            {autoFillCount > 0
+              ? `✓ ${autoFillCount} answers auto-filled on webpage!`
+              : 'Could not auto-fill. Click "Scan page & answer" to retry.'}
+          </span>
+        </div>
+      )}
+
+      {/* Error Banner */}
+      {error && (
+        <div className="error-banner">
+          <AlertCircle size={18} />
+          <div className="error-text">
+            <strong>Solver Error</strong>
+            <p>{error}</p>
           </div>
         </div>
       )}
+
+      {/* Questions Results List (Full-Page Scan) */}
+      {questionsData && (
+        <div className="results-container">
+          <div className="results-header">
+            <div className="results-meta">
+              <span className="results-count">
+                {questionsData.questions?.length || 0} Questions Solved
+              </span>
+              {questionsData.worksheetTitle && (
+                <span className="worksheet-name">{questionsData.worksheetTitle}</span>
+              )}
+            </div>
+
+            <div className="results-actions">
+              <button
+                className="action-pill-btn"
+                onClick={copyAllQuestionsAndAnswers}
+                title="Copy all questions"
+              >
+                {copiedAll ? <Check size={13} /> : <Copy size={13} />}
+                <span>{copiedAll ? 'Copied' : 'Copy All'}</span>
+              </button>
+
+              <button
+                className="action-pill-btn"
+                onClick={exportAsJson}
+                title="Export JSON"
+              >
+                <Download size={13} />
+                <span>JSON</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="questions-list">
+            {questionsData.questions?.map((q, idx) => (
+              <div key={q.id || idx} className="question-card">
+                <div className="question-card-header">
+                  <div className="badges-group">
+                    <span className="badge badge-number">Q#{q.number || idx + 1}</span>
+                    {q.subject && (
+                      <span className={`badge badge-subject ${q.subject.toLowerCase()}`}>
+                        {q.subject}
+                      </span>
+                    )}
+                    <span className="badge badge-type">{q.type.toUpperCase()}</span>
+                  </div>
+
+                  <button
+                    className="copy-card-btn"
+                    onClick={() => copyToClipboard(q.answerText, q.id || idx)}
+                    title="Copy Answer"
+                  >
+                    {copiedId === (q.id || idx) ? <Check size={13} color="#10b981" /> : <Copy size={13} />}
+                  </button>
+                </div>
+
+                <div className="question-text">{q.question}</div>
+
+                {q.type === 'mcq' && q.options && q.options.length > 0 && (
+                  <div className="options-grid">
+                    {q.options.map((opt) => {
+                      const isCorrect = (q.correctOptions && q.correctOptions.includes(opt.label)) ||
+                                        (q.correctOption && q.correctOption === opt.label);
+                      return (
+                        <div
+                          key={opt.label}
+                          className={`option-item ${isCorrect ? 'option-correct' : ''}`}
+                        >
+                          <span className={`option-label ${isCorrect ? 'label-correct' : ''}`}>
+                            {opt.label}
+                          </span>
+                          <span className="option-text">{opt.text}</span>
+                          {isCorrect && <Check size={13} className="correct-check-icon" />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {q.type !== 'mcq' && q.answerText && (
+                  <div className="short-answer-box">
+                    <span className="answer-label">Correct Answer:</span>
+                    <span className="answer-value">{q.answerText}</span>
+                  </div>
+                )}
+
+                {q.explanation && (
+                  <div className="explanation-wrapper">
+                    <button
+                      className="explanation-toggle-btn"
+                      onClick={() => toggleExplanation(q.id || idx)}
+                    >
+                      <div className="explanation-toggle-left">
+                        <HelpCircle size={13} />
+                        <span>Explanation</span>
+                      </div>
+                      {expandedExplanation[q.id || idx] ? (
+                        <ChevronUp size={14} />
+                      ) : (
+                        <ChevronDown size={14} />
+                      )}
+                    </button>
+
+                    {expandedExplanation[q.id || idx] && (
+                      <div className="explanation-content">
+                        <p>{q.explanation}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Footer Quota Card (as seen in mockup) */}
+      <div className="footer-quota-card">
+        <div className="quota-header">
+          <span className="quota-title">Free messages</span>
+          <span className="quota-count">{usedMessages} / {totalMessages}</span>
+        </div>
+        <div className="quota-progress-track">
+          <div
+            className="quota-progress-fill"
+            style={{ width: `${Math.min(100, (usedMessages / totalMessages) * 100)}%` }}
+          ></div>
+        </div>
+        <div className="quota-footer">
+          <span className="quota-left">{Math.max(0, totalMessages - usedMessages)} left</span>
+          <a
+            className="quota-link"
+            onClick={() => setShowLicenseModal(true)}
+          >
+            Have a license key?
+          </a>
+        </div>
+      </div>
     </div>
   );
 }

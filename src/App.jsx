@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import './App.css';
 
-const DEFAULT_API_KEY = 'AQ.Ab8RN6KKnRxP2AdM_U4Szp6laLTfPYPE7NO0rQM_W146bUiHsw';
+const DEFAULT_API_KEY = '';
 const MODELS_TO_TRY = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'];
 
 export default function App() {

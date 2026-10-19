@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Play,
   Copy,
@@ -18,6 +18,7 @@ import {
   Sun,
   Moon,
   EyeOff,
+  Shield,
   ShieldAlert,
   BookOpen,
   Key
@@ -25,16 +26,37 @@ import {
 import './App.css';
 
 const DEFAULT_API_KEY = '';
-const MODELS_TO_TRY = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+const MODELS_TO_TRY = ['gemini-3.1-flash-lite', 'gemini-3.7-flash', 'gemini-flash-lite-latest', 'gemini-3.5-flash-lite', 'gemini-3.8-flash'];
 
 export default function App() {
   const [apiKey, setApiKey] = useState(DEFAULT_API_KEY);
   const [showSettings, setShowSettings] = useState(false);
   const [activeTab, setActiveTab] = useState(null);
   const [theme, setTheme] = useState('dark'); // 'dark' | 'light'
-  
+
   // 3 Modes: 'invisible' | 'stealth' | 'explain'
   const [solverMode, setSolverMode] = useState('stealth');
+  const tabRefs = useRef({});
+  const [indicatorStyle, setIndicatorStyle] = useState({ transform: 'translateX(0px)', width: '0px', opacity: 0 });
+
+  useEffect(() => {
+    const updateIndicator = () => {
+      const activeEl = tabRefs.current[solverMode];
+      if (activeEl) {
+        setIndicatorStyle({
+          transform: `translateX(${activeEl.offsetLeft}px)`,
+          width: `${activeEl.offsetWidth}px`,
+          opacity: 1
+        });
+      }
+    };
+    const timer = setTimeout(updateIndicator, 10);
+    window.addEventListener('resize', updateIndicator);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', updateIndicator);
+    };
+  }, [solverMode]);
 
   // Mode 1: Invisible Toggles
   const [invisibleAutoFill, setInvisibleAutoFill] = useState(true);
@@ -94,7 +116,7 @@ export default function App() {
           if (res) {
             if (res.gemini_api_key) setApiKey(res.gemini_api_key);
             if (res.theme_mode) setTheme(res.theme_mode);
-            
+
             // Map legacy solver_mode to new 3 modes
             if (res.solver_mode === 'full_scan') setSolverMode('explain');
             else if (res.solver_mode === 'dom_interactive') setSolverMode('stealth');
@@ -145,6 +167,19 @@ export default function App() {
         chrome.storage.onChanged.removeListener(handleStorageChange);
       };
     }
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.altKey && ['1', '2', '3'].includes(e.key)) {
+        e.preventDefault();
+        if (e.key === '1') handleSetSolverMode('invisible');
+        else if (e.key === '2') handleSetSolverMode('stealth');
+        else if (e.key === '3') handleSetSolverMode('explain');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const saveStorage = (key, value) => {
@@ -232,8 +267,8 @@ export default function App() {
 
       // Auto-Fill Check
       const shouldAutoFill = (solverMode === 'invisible' && invisibleAutoFill) ||
-                             (solverMode === 'explain' && explainAutoFill) ||
-                             (solverMode === 'stealth' && !stealthHighlightOnly);
+        (solverMode === 'explain' && explainAutoFill) ||
+        (solverMode === 'stealth' && !stealthHighlightOnly);
 
       if (shouldAutoFill && solved.questions && solved.questions.length > 0) {
         setScanStep('autofilling');
@@ -294,8 +329,14 @@ export default function App() {
   };
 
   const extractAndSolveWithGemini = async (rawText, key) => {
-    const prompt = `You are an elite academic test solving engine.
-Analyze the following test/quiz page text. Detect all questions, choices, and solve them with complete accuracy.
+    const prompt = `You are a world-class academic test solving engine with flawless reasoning capabilities.
+Analyze the following test/quiz page text. Detect all questions, choices, and solve every question with 100% precision.
+
+CRITICAL RULES & TRAP DETECTION:
+1. TRAP WORDS: Scrutinize every question for negative qualifiers like "NOT", "EXCEPT", "LEAST", "FALSE", "INCORRECT", "NEVER". If seeking what is NOT true, actively eliminate all true statements.
+2. ELIMINATION FIRST (Chain-of-Thought): In "analysis", briefly evaluate choices and eliminate distractor options before choosing the correct option letter.
+3. MULTI-SELECT: If a question states "select all that apply" or allows multiple answers, mark "isMultiSelect": true and list ALL correct letters in "correctOptions".
+4. DROPDOWN QUESTIONS: If the question has blanks or dropdowns, set "type": "dropdown", provide sequential choices in "dropdownAnswers", and join them with "➔" in "answerText".
 
 Return strictly valid JSON:
 {
@@ -305,16 +346,18 @@ Return strictly valid JSON:
       "id": 1,
       "number": "1",
       "subject": "General",
-      "type": "mcq", // "mcq" | "multi" | "short"
+      "type": "mcq", // "mcq" | "multi" | "short" | "dropdown"
+      "analysis": "<Methodical elimination of incorrect choices and proof of correct choice>",
       "question": "<Exact question text>",
       "options": [
         { "label": "A", "text": "<Option A text>" },
         { "label": "B", "text": "<Option B text>" }
       ],
-      "correctOption": "A", // null if short answer
+      "correctOption": "A", // null if short answer or dropdown
       "correctOptions": ["A"],
-      "answerText": "<Exact correct answer text>",
-      "explanation": "<Clear 1-2 sentence rationale>"
+      "dropdownAnswers": ["Choice 1", "Choice 2"], // only if dropdown
+      "answerText": "<Exact correct answer text or Choice 1 ➔ Choice 2>",
+      "explanation": "<Clear 1-2 sentence core factual rationale>"
     }
   ]
 }
@@ -407,7 +450,12 @@ ${rawText.substring(0, 35000)}`;
           </div>
           <div>
             <h1 className="brand-title">Study Assistant</h1>
-            <span className="brand-subtitle">Gemini 3.5 Flash-Lite</span>
+            <div className="header-target-page" title={activeTab?.url || activeTab?.title || 'No active tab'}>
+              <span className="header-status-dot"></span>
+              <span className="header-page-title">
+                {activeTab?.title ? (activeTab.title.length > 28 ? activeTab.title.slice(0, 28) + '...' : activeTab.title) : 'Detecting Page...'}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -490,44 +538,94 @@ ${rawText.substring(0, 35000)}`;
         </div>
       )}
 
-      {/* Mode Segmented Tabs: Invisible | Stealth | Explain */}
-      <div className="mode-segmented-control">
+      {/* Mode Segmented Tab Pane */}
+      <div className="modes" role="tablist" aria-label="Mode" data-active-mode={solverMode}>
+        <span
+          className="indicator"
+          style={{
+            transform: indicatorStyle.transform,
+            width: indicatorStyle.width,
+            opacity: indicatorStyle.opacity
+          }}
+        ></span>
         <button
-          className={`mode-tab ${solverMode === 'invisible' ? 'active' : ''}`}
+          ref={(el) => (tabRefs.current['invisible'] = el)}
+          className={`tab ${solverMode === 'invisible' ? 'active' : ''}`}
+          role="tab"
+          aria-selected={solverMode === 'invisible'}
           onClick={() => handleSetSolverMode('invisible')}
           title="Switch to Invisible Mode (Shortcut: Alt + 1)"
         >
           <EyeOff size={14} />
+          <span className="dot"></span>
           <span>Invisible</span>
-          <span className="kbd-badge" style={{ fontSize: '9px', padding: '1px 4px', opacity: 0.85 }}>Alt+1</span>
+          <kbd>Alt+1</kbd>
         </button>
         <button
-          className={`mode-tab ${solverMode === 'stealth' ? 'active' : ''}`}
+          ref={(el) => (tabRefs.current['stealth'] = el)}
+          className={`tab ${solverMode === 'stealth' ? 'active' : ''}`}
+          role="tab"
+          aria-selected={solverMode === 'stealth'}
           onClick={() => handleSetSolverMode('stealth')}
           title="Switch to Stealth Mode (Shortcut: Alt + 2)"
         >
-          <ShieldAlert size={14} />
+          <Shield size={14} />
+          <span className="dot"></span>
           <span>Stealth</span>
-          <span className="kbd-badge" style={{ fontSize: '9px', padding: '1px 4px', opacity: 0.85 }}>Alt+2</span>
+          <kbd>Alt+2</kbd>
         </button>
         <button
-          className={`mode-tab ${solverMode === 'explain' ? 'active' : ''}`}
+          ref={(el) => (tabRefs.current['explain'] = el)}
+          className={`tab ${solverMode === 'explain' ? 'active' : ''}`}
+          role="tab"
+          aria-selected={solverMode === 'explain'}
           onClick={() => handleSetSolverMode('explain')}
           title="Switch to Explain Mode (Shortcut: Alt + 3)"
         >
           <BookOpen size={14} />
+          <span className="dot"></span>
           <span>Explain</span>
-          <span className="kbd-badge" style={{ fontSize: '9px', padding: '1px 4px', opacity: 0.85 }}>Alt+3</span>
+          <kbd>Alt+3</kbd>
         </button>
       </div>
 
-      {/* Target Page Preview Card */}
-      <div className="tab-card">
-        <span className="tab-label">Target Page</span>
-        <div className="tab-title" title={activeTab?.title || 'No active tab'}>
-          {activeTab?.title || 'Detecting Active Tab...'}
-        </div>
-        <div className="tab-url">{activeTab?.url || ''}</div>
+      {/* Hero Action Pill Buttons (Image 1 & 2 Style) */}
+      <div className="hero-action-group">
+        <button
+          className={`btn-hero-primary ${isScanning ? 'scanning' : ''}`}
+          onClick={handleStartExtraction}
+          disabled={isScanning}
+          title="Scan and solve all questions on active page"
+        >
+          {isScanning ? (
+            <>
+              <div className="spinner"></div>
+              <span>
+                {scanStep === 'scrolling' && 'Auto-Scrolling Page...'}
+                {scanStep === 'ai_processing' && 'Solving with Gemini AI...'}
+                {scanStep === 'autofilling' && 'Auto-Filling Live Page...'}
+                {!scanStep && 'Scanning Page...'}
+              </span>
+            </>
+          ) : (
+            <>
+              <Zap size={16} fill="currentColor" />
+              <span>
+                {solverMode === 'invisible' ? 'SILENT SOLVE ALL' : solverMode === 'stealth' ? 'SOLVE ALL (STEALTH)' : 'SOLVE ALL & EXPLAIN'}
+              </span>
+            </>
+          )}
+        </button>
+
+        <button
+          className="btn-hero-snip"
+          onClick={handleTriggerSnip}
+          title="Drag and snip any question, formula or diagram (Alt + S)"
+        >
+          <Crop size={15} />
+          <span>ACTIVATE SCREENSHOT TOOL</span>
+          <span className="kbd-pill">Alt + S</span>
+        </button>
       </div>
 
       {/* ==================== MODE 1: INVISIBLE ==================== */}
@@ -535,118 +633,61 @@ ${rawText.substring(0, 35000)}`;
         <>
           <div className="status-badge" style={{ color: '#a5b4fc', borderColor: 'rgba(99, 102, 241, 0.25)', background: 'rgba(99, 102, 241, 0.08)' }}>
             <span className="status-dot pulsating" style={{ backgroundColor: '#818cf8' }}></span>
-            <span>Invisible Ghost Mode Ready (Zero Screen Traces)</span>
+            <span>Invisible Ghost Mode Active (Zero Screen Traces)</span>
           </div>
 
-          <div className="feature-toggle-card">
-            <div className="toggle-info">
-              <span className="toggle-title">Silent Auto-Fill on Webpage</span>
-              <span className="toggle-desc">No floating banner or toasts; silently checks choices directly</span>
-            </div>
-            <label className="switch-wrapper">
-              <input
-                type="checkbox"
-                className="switch-input"
-                checked={invisibleAutoFill}
-                onChange={(e) => {
-                  setInvisibleAutoFill(e.target.checked);
-                  saveStorage('invisible_autofill', e.target.checked);
-                }}
-              />
-              <span className="switch-slider"></span>
-            </label>
-          </div>
+          <div className="compact-pref-card">
+            <div className="compact-pref-header">PREFERENCES</div>
 
-          <div className="feature-toggle-card">
-            <div className="toggle-info">
-              <span className="toggle-title">Auto-Copy Answer to Clipboard</span>
-              <span className="toggle-desc">Silently copies the exact answer text to clipboard on solve</span>
+            <div className="compact-toggle-row">
+              <label className="switch-wrapper">
+                <input
+                  type="checkbox"
+                  className="switch-input"
+                  checked={invisibleAutoFill}
+                  onChange={(e) => {
+                    setInvisibleAutoFill(e.target.checked);
+                    saveStorage('invisible_autofill', e.target.checked);
+                  }}
+                />
+                <span className="switch-slider"></span>
+              </label>
+              <span className="compact-toggle-label">Silent Auto-Fill Answers</span>
+              <span className="info-icon" title="No floating banner or toasts; silently checks choices directly">ⓘ</span>
             </div>
-            <label className="switch-wrapper">
-              <input
-                type="checkbox"
-                className="switch-input"
-                checked={invisibleClipboardCopy}
-                onChange={(e) => {
-                  setInvisibleClipboardCopy(e.target.checked);
-                  saveStorage('invisible_clipboard', e.target.checked);
-                }}
-              />
-              <span className="switch-slider"></span>
-            </label>
-          </div>
 
-          <div className="feature-toggle-card">
-            <div className="toggle-info">
-              <span className="toggle-title">Silent Double-Click Solver</span>
-              <span className="toggle-desc">Double-click on any question card silently ticks the answer</span>
+            <div className="compact-toggle-row">
+              <label className="switch-wrapper">
+                <input
+                  type="checkbox"
+                  className="switch-input"
+                  checked={invisibleClipboardCopy}
+                  onChange={(e) => {
+                    setInvisibleClipboardCopy(e.target.checked);
+                    saveStorage('invisible_clipboard', e.target.checked);
+                  }}
+                />
+                <span className="switch-slider"></span>
+              </label>
+              <span className="compact-toggle-label">Copy Answer to Clipboard</span>
+              <span className="info-icon" title="Silently copies the exact answer text to clipboard on solve">ⓘ</span>
             </div>
-            <label className="switch-wrapper">
-              <input
-                type="checkbox"
-                className="switch-input"
-                checked={invisibleDoubleClick}
-                onChange={(e) => {
-                  setInvisibleDoubleClick(e.target.checked);
-                  saveStorage('invisible_double_click', e.target.checked);
-                }}
-              />
-              <span className="switch-slider"></span>
-            </label>
-          </div>
 
-          <button
-            className={`start-btn ${isScanning ? 'scanning' : ''}`}
-            onClick={handleStartExtraction}
-            disabled={isScanning}
-          >
-            {isScanning ? (
-              <>
-                <div className="spinner"></div>
-                <span>Silent Scanning Page...</span>
-              </>
-            ) : (
-              <>
-                <Play size={16} fill="currentColor" />
-                <span>Scan page & silent answer</span>
-              </>
-            )}
-          </button>
-
-          {/* Snip Hero Card */}
-          <div className="snip-card">
-            <div className="snip-card-header">
-              <div className="snip-card-icon">
-                <Crop size={18} />
-              </div>
-              <div className="snip-card-details">
-                <h4>Snip a region</h4>
-                <p>Drag a box over a diagram, an image or text you can't select.</p>
-              </div>
-            </div>
-            <button
-              className="snip-action-btn"
-              onClick={handleTriggerSnip}
-            >
-              <span>Launch snip tool</span>
-              <span className="kbd-badge">Alt</span>
-              <span className="kbd-badge">S</span>
-            </button>
-          </div>
-
-          <div className="interactive-instructions-card">
-            <h4>How Invisible Mode Works:</h4>
-            <div className="instruction-step">
-              <div className="step-num">1</div>
-              <p>100% undetectable — no side HUD, no popups, and no visible overlays.</p>
-            </div>
-            <div className="instruction-step">
-              <div className="step-num">2</div>
-              <p>Double-click any question card to silently tick the correct option.</p>
-            </div>
-            <div className="instruction-step">
-              <div className="step-num">3</div>
-              <p>Answer text is copied straight to your clipboard ready to paste.</p>
+            <div className="compact-toggle-row">
+              <label className="switch-wrapper">
+                <input
+                  type="checkbox"
+                  className="switch-input"
+                  checked={invisibleDoubleClick}
+                  onChange={(e) => {
+                    setInvisibleDoubleClick(e.target.checked);
+                    saveStorage('invisible_double_click', e.target.checked);
+                  }}
+                />
+                <span className="switch-slider"></span>
+              </label>
+              <span className="compact-toggle-label">Double-Click Question Solver</span>
+              <span className="info-icon" title="Double-click on any question card silently ticks the answer">ⓘ</span>
             </div>
           </div>
         </>
@@ -657,116 +698,74 @@ ${rawText.substring(0, 35000)}`;
         <>
           <div className="status-badge">
             <span className="status-dot pulsating"></span>
-            <span>Stealth Solver is Ready</span>
+            <span>Stealth Solver Active</span>
           </div>
 
-          <div className={`feature-toggle-card ${stealthAutoFill ? 'toggle-card-disabled' : ''}`}>
-            <div className="toggle-info">
-              <span className="toggle-title">Highlight correct option only</span>
-              <span className="toggle-desc">
-                {stealthAutoFill
-                  ? 'Disabled while Auto-fill is active (hints not needed)'
-                  : 'Marks the right option subtly so you can choose it yourself'}
+          <div className="compact-pref-card">
+            <div className="compact-pref-header">PREFERENCES</div>
+
+            <div className="compact-toggle-row">
+              <label className="switch-wrapper">
+                <input
+                  type="checkbox"
+                  className="switch-input"
+                  checked={stealthAutoFill}
+                  onChange={(e) => {
+                    const val = e.target.checked;
+                    setStealthAutoFill(val);
+                    saveStorage('stealth_autofill', val);
+                    if (val) {
+                      setStealthHighlightOnly(false);
+                      saveStorage('stealth_highlight_only', false);
+                    } else {
+                      setStealthHighlightOnly(true);
+                      saveStorage('stealth_highlight_only', true);
+                    }
+                  }}
+                />
+                <span className="switch-slider"></span>
+              </label>
+              <span className="compact-toggle-label">Auto-Fill Answers & Inputs</span>
+              <span className="info-icon" title="Automatically selects answers and fills inputs without banners">ⓘ</span>
+            </div>
+
+            <div className="compact-toggle-row">
+              <label className={`switch-wrapper ${stealthAutoFill ? 'switch-disabled' : ''}`}>
+                <input
+                  type="checkbox"
+                  className="switch-input"
+                  checked={!stealthAutoFill && stealthHighlightOnly}
+                  disabled={stealthAutoFill}
+                  onChange={(e) => {
+                    if (!stealthAutoFill) {
+                      setStealthHighlightOnly(e.target.checked);
+                      saveStorage('stealth_highlight_only', e.target.checked);
+                    }
+                  }}
+                />
+                <span className="switch-slider"></span>
+              </label>
+              <span className={`compact-toggle-label ${stealthAutoFill ? 'label-disabled' : ''}`}>
+                Highlight Hint Only (No Fill)
               </span>
+              <span className="info-icon" title="Subtly marks the right option with a tick (✓) so you can choose it yourself">ⓘ</span>
             </div>
-            <label className={`switch-wrapper ${stealthAutoFill ? 'switch-disabled' : ''}`}>
-              <input
-                type="checkbox"
-                className="switch-input"
-                checked={!stealthAutoFill && stealthHighlightOnly}
-                disabled={stealthAutoFill}
-                onChange={(e) => {
-                  if (!stealthAutoFill) {
-                    setStealthHighlightOnly(e.target.checked);
-                    saveStorage('stealth_highlight_only', e.target.checked);
-                  }
-                }}
-              />
-              <span className="switch-slider"></span>
-            </label>
-          </div>
 
-          <div className="feature-toggle-card">
-            <div className="toggle-info">
-              <span className="toggle-title">Auto-fill answers & text fields</span>
-              <span className="toggle-desc">Automatically selects answers and fills inputs without banners</span>
-            </div>
-            <label className="switch-wrapper">
-              <input
-                type="checkbox"
-                className="switch-input"
-                checked={stealthAutoFill}
-                onChange={(e) => {
-                  const val = e.target.checked;
-                  setStealthAutoFill(val);
-                  saveStorage('stealth_autofill', val);
-                  if (val) {
-                    setStealthHighlightOnly(false);
-                    saveStorage('stealth_highlight_only', false);
-                  } else {
-                    // When auto-fill is turned OFF, turn ON hints only
-                    setStealthHighlightOnly(true);
-                    saveStorage('stealth_highlight_only', true);
-                  }
-                }}
-              />
-              <span className="switch-slider"></span>
-            </label>
-          </div>
-
-          <div className="feature-toggle-card">
-            <div className="toggle-info">
-              <span className="toggle-title">Double-click a question</span>
-              <span className="toggle-desc">Double-click any question card on your page to get its answer</span>
-            </div>
-            <label className="switch-wrapper">
-              <input
-                type="checkbox"
-                className="switch-input"
-                checked={stealthDoubleClick}
-                onChange={(e) => {
-                  setStealthDoubleClick(e.target.checked);
-                  saveStorage('stealth_double_click', e.target.checked);
-                }}
-              />
-              <span className="switch-slider"></span>
-            </label>
-          </div>
-
-          {/* Snip Hero Card */}
-          <div className="snip-card">
-            <div className="snip-card-header">
-              <div className="snip-card-icon">
-                <Crop size={18} />
-              </div>
-              <div className="snip-card-details">
-                <h4>Snip a region</h4>
-                <p>Drag a box over a diagram, an image or text you can't select.</p>
-              </div>
-            </div>
-            <button
-              className="snip-action-btn"
-              onClick={handleTriggerSnip}
-            >
-              <span>Launch snip tool</span>
-              <span className="kbd-badge">Alt</span>
-              <span className="kbd-badge">S</span>
-            </button>
-          </div>
-
-          <div className="interactive-instructions-card">
-            <h4>HOW IT WORKS:</h4>
-            <div className="instruction-step">
-              <div className="step-num">1</div>
-              <p>Open your page and double-click a question card.</p>
-            </div>
-            <div className="instruction-step">
-              <div className="step-num">2</div>
-              <p>MCQ choices are marked subtly with a green check (✓).</p>
-            </div>
-            <div className="instruction-step">
-              <div className="step-num">3</div>
-              <p>Text fields and textareas are automatically typed in without any banners!</p>
+            <div className="compact-toggle-row">
+              <label className="switch-wrapper">
+                <input
+                  type="checkbox"
+                  className="switch-input"
+                  checked={stealthDoubleClick}
+                  onChange={(e) => {
+                    setStealthDoubleClick(e.target.checked);
+                    saveStorage('stealth_double_click', e.target.checked);
+                  }}
+                />
+                <span className="switch-slider"></span>
+              </label>
+              <span className="compact-toggle-label">Double-Click Question Solver</span>
+              <span className="info-icon" title="Double-click any question card on your page to get its answer">ⓘ</span>
             </div>
           </div>
         </>
@@ -780,105 +779,60 @@ ${rawText.substring(0, 35000)}`;
             <span>Study Explainer HUD Active</span>
           </div>
 
-          <div className="feature-toggle-card">
-            <div className="toggle-info">
-              <span className="toggle-title">Show answers on the page</span>
-              <span className="toggle-desc">Highlights and auto-fills the right option beside each question</span>
-            </div>
-            <label className="switch-wrapper">
-              <input
-                type="checkbox"
-                className="switch-input"
-                checked={explainAutoFill}
-                onChange={(e) => {
-                  setExplainAutoFill(e.target.checked);
-                  saveStorage('explain_autofill', e.target.checked);
-                }}
-              />
-              <span className="switch-slider"></span>
-            </label>
-          </div>
+          <div className="compact-pref-card">
+            <div className="compact-pref-header">PREFERENCES</div>
 
-          <div className="feature-toggle-card">
-            <div className="toggle-info">
-              <span className="toggle-title">Floating answer card (Side Banner)</span>
-              <span className="toggle-desc">A small card slides in on the right with the answer and reason</span>
+            <div className="compact-toggle-row">
+              <label className="switch-wrapper">
+                <input
+                  type="checkbox"
+                  className="switch-input"
+                  checked={explainAutoFill}
+                  onChange={(e) => {
+                    setExplainAutoFill(e.target.checked);
+                    saveStorage('explain_autofill', e.target.checked);
+                  }}
+                />
+                <span className="switch-slider"></span>
+              </label>
+              <span className="compact-toggle-label">Auto-Fill Answers on Page</span>
+              <span className="info-icon" title="Highlights and auto-fills the right option beside each question">ⓘ</span>
             </div>
-            <label className="switch-wrapper">
-              <input
-                type="checkbox"
-                className="switch-input"
-                checked={explainSideBanner}
-                onChange={(e) => {
-                  setExplainSideBanner(e.target.checked);
-                  saveStorage('explain_side_banner', e.target.checked);
-                }}
-              />
-              <span className="switch-slider"></span>
-            </label>
-          </div>
 
-          <div className="feature-toggle-card">
-            <div className="toggle-info">
-              <span className="toggle-title">Add detailed explanation</span>
-              <span className="toggle-desc">Two or three sentences on why the answer is right</span>
+            <div className="compact-toggle-row">
+              <label className="switch-wrapper">
+                <input
+                  type="checkbox"
+                  className="switch-input"
+                  checked={explainSideBanner}
+                  onChange={(e) => {
+                    setExplainSideBanner(e.target.checked);
+                    saveStorage('explain_side_banner', e.target.checked);
+                  }}
+                />
+                <span className="switch-slider"></span>
+              </label>
+              <span className="compact-toggle-label">Right-Side Answer Banner</span>
+              <span className="info-icon" title="A small card slides in on the right with the answer and reason">ⓘ</span>
             </div>
-            <label className="switch-wrapper">
-              <input
-                type="checkbox"
-                className="switch-input"
-                checked={explainDetailed}
-                onChange={(e) => {
-                  setExplainDetailed(e.target.checked);
-                  saveStorage('explain_detailed', e.target.checked);
-                }}
-              />
-              <span className="switch-slider"></span>
-            </label>
-          </div>
 
-          {/* Snip Hero Card */}
-          <div className="snip-card">
-            <div className="snip-card-header">
-              <div className="snip-card-icon">
-                <Crop size={18} />
-              </div>
-              <div className="snip-card-details">
-                <h4>Snip a region</h4>
-                <p>Drag a box over a diagram, an image or text you can't select.</p>
-              </div>
+            <div className="compact-toggle-row">
+              <label className="switch-wrapper">
+                <input
+                  type="checkbox"
+                  className="switch-input"
+                  checked={explainDetailed}
+                  onChange={(e) => {
+                    setExplainDetailed(e.target.checked);
+                    saveStorage('explain_detailed', e.target.checked);
+                  }}
+                />
+                <span className="switch-slider"></span>
+              </label>
+              <span className="compact-toggle-label">Detailed Explanations</span>
+              <span className="info-icon" title="Two or three sentences on why the answer is right">ⓘ</span>
             </div>
-            <button
-              className="snip-action-btn"
-              onClick={handleTriggerSnip}
-            >
-              <span>Launch snip tool</span>
-              <span className="kbd-badge">Alt</span>
-              <span className="kbd-badge">S</span>
-            </button>
           </div>
-
-          <button
-            className={`start-btn ${isScanning ? 'scanning' : ''}`}
-            onClick={handleStartExtraction}
-            disabled={isScanning}
-          >
-            {isScanning ? (
-              <>
-                <div className="spinner"></div>
-                <span>
-                  {scanStep === 'scrolling' && 'Auto-Scrolling Page...'}
-                  {scanStep === 'ai_processing' && 'Solving Questions & Explanations...'}
-                  {scanStep === 'autofilling' && 'Auto-Filling Live Page...'}
-                </span>
-              </>
-            ) : (
-              <>
-                <Play size={16} fill="currentColor" />
-                <span>Scan page & answer</span>
-              </>
-            )}
-          </button>
         </>
       )}
 
@@ -968,7 +922,7 @@ ${rawText.substring(0, 35000)}`;
                   <div className="options-grid">
                     {q.options.map((opt) => {
                       const isCorrect = (q.correctOptions && q.correctOptions.includes(opt.label)) ||
-                                        (q.correctOption && q.correctOption === opt.label);
+                        (q.correctOption && q.correctOption === opt.label);
                       return (
                         <div
                           key={opt.label}

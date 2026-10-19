@@ -1,8 +1,8 @@
 // Background Service Worker
 console.log('[Worksheet Extractor] Background service worker active.');
 
-const DEFAULT_API_KEY = '';
-const MODELS = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+const DEFAULT_API_KEY = ''; 
+const MODELS = ['gemini-3.1-flash-lite', 'gemini-3.7-flash', 'gemini-flash-lite-latest', 'gemini-3.5-flash-lite', 'gemini-3.8-flash'];
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'SOLVE_SINGLE_QUESTION') {
@@ -26,7 +26,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'SOLVE_IMAGE_QUESTION') {
-    handleSolveImageQuestion(request.imageData, request.optionsList)
+    handleSolveImageQuestion(request.imageData, request.optionsList, request.domContext)
       .then(res => sendResponse(res))
       .catch(err => sendResponse({ success: false, error: err.message }));
     return true;
@@ -45,9 +45,13 @@ async function handleSolveSingleQuestion(qData) {
       return `Blank ${idx + 1} options: [ ${opts} ]`;
     }).join('\n');
 
-    prompt = `You are an elite academic test solver.
+    prompt = `You are a world-class academic test solver.
 This is a multiple-dropdown / fill-in-the-blank (cloze) question.
-Read the sentence carefully and choose the single best matching option from the provided choices for each blank in exact order.
+Your goal is to choose the single grammatically, conceptually, and factually perfect option for each blank.
+
+CRITICAL RULES & REASONING (CoT):
+1. Contextual Cohesion: Read the entire sentence with all blanks together to ensure the complete thought is logically and syntactically sound.
+2. Option Restraint: Choose solely from the provided options for each specific blank in exact sequential order.
 
 Sentence with blanks:
 "${qData.question}"
@@ -58,19 +62,25 @@ ${blanksFormatted}
 Return strictly valid JSON with this exact schema (no markdown, no backticks):
 {
   "type": "dropdown",
+  "analysis": "<Brief evaluation of sentence logic and how each choice completes the meaning>",
   "dropdownAnswers": [
     "<exact text of chosen option for Blank 1>",
     "<exact text of chosen option for Blank 2>"
   ],
   "answerText": "<all chosen answers separated by arrow symbols, e.g. Ans 1 ➔ Ans 2>",
-  "explanation": "<1-2 short sentences explaining why these choices complete the sentence accurately>"
+  "explanation": "<1-2 short sentences summarizing why these choices complete the sentence accurately>"
 }`;
   } else {
     const isMultiHint = qData.isMultiHint ? '\nNote: This question allows MULTIPLE answers (Multi-Select). If more than one choice is correct, include ALL correct letters in "correctOptions".' : '';
 
-    prompt = `You are a high-speed academic test solver.
-Solve this single question accurately and identify the correct choice(s) or write-in answer.
+    prompt = `You are a world-class academic test solver with flawless reasoning capabilities.
+Your objective is to solve this single question with 100% precision.
 ${isMultiHint}
+
+CRITICAL RULES & TRAP DETECTION:
+1. TRAP WORDS: Scrutinize the question for negative qualifiers like "NOT", "EXCEPT", "LEAST", "FALSE", "INCORRECT", "NEVER". If the question asks which is NOT true, actively eliminate all true statements.
+2. ELIMINATION FIRST (Chain-of-Thought): In "analysis", methodically evaluate the choices, disprove distractors, and identify the single undeniably correct answer before concluding.
+3. ACADEMIC GROUNDING: Base answers strictly on rigorous scientific/academic facts and definitions.
 
 Question:
 "${qData.question}"
@@ -80,11 +90,12 @@ ${qData.options && qData.options.length > 0 ? qData.options.map(o => `${o.label}
 
 Return strictly valid JSON with this exact schema (no markdown, no backticks):
 {
+  "analysis": "<Methodical 1-2 sentence elimination of incorrect choices and proof of the correct choice>",
   "isMultiSelect": true | false,
   "correctOption": "A" | "B" | "C" | "D" | null, // primary/first correct letter if MCQ, null if short answer
-  "correctOptions": ["A", "C"], // array of all correct option letters (if multi-select or single choice, e.g. ["A", "C"] or ["B"]), empty [] if short answer
+  "correctOptions": ["A"], // array of all correct option letters (e.g. ["A", "C"] or ["B"]), empty [] if short answer
   "answerText": "<exact text of option(s) or concise write-in answer>",
-  "explanation": "<1-2 short sentences explaining why this answer is correct>"
+  "explanation": "<1-2 short sentences summarizing the core factual principle>"
 }`;
   }
 
@@ -126,7 +137,7 @@ Return strictly valid JSON with this exact schema (no markdown, no backticks):
   throw lastError || new Error('Failed to solve question with Gemini API.');
 }
 
-async function handleSolveImageQuestion(imageData, optionsList = []) {
+async function handleSolveImageQuestion(imageData, optionsList = [], domContext = null) {
   const storage = await chrome.storage.local.get(['gemini_api_key']);
   const apiKey = storage.gemini_api_key || DEFAULT_API_KEY;
 
@@ -146,26 +157,45 @@ async function handleSolveImageQuestion(imageData, optionsList = []) {
     base64Data = imageData.split(',')[1];
   }
 
-  const domOptionsHint = (optionsList && optionsList.length > 0)
-    ? `\nOptions detected in the cropped area: ${optionsList.map(o => `${o.label || ''}) ${o.text || o}`).join(', ')}`
-    : '';
+  // Format any DOM extracted text (Hybrid Mode)
+  let domTextSection = '';
+  if (domContext && (domContext.question || domContext.options?.length > 0)) {
+    const domOpts = domContext.options?.map(o => `${o.label}) ${o.text}`).join('\n') || '';
+    domTextSection = `
+GROUND-TRUTH DOM TEXT DETECTED IN SELECTION AREA:
+${domContext.question ? `Question Text: "${domContext.question}"` : ''}
+${domOpts ? `Choices from DOM:\n${domOpts}` : ''}
+(Use this clean text to prevent OCR errors or cropped text ambiguities)
+`;
+  } else if (optionsList && optionsList.length > 0) {
+    domTextSection = `\nOptions detected in the cropped area: ${optionsList.map(o => `${o.label || ''}) ${o.text || o}`).join(', ')}`;
+  }
 
-  const prompt = `You are an elite academic test solver with multimodal vision capabilities.
-Analyze the provided cropped screenshot of a test or quiz question.
-1. Transcribe the question and all choices clearly.
-2. Determine whether it is multiple choice, multi-select, or write-in/short answer.
-3. Solve the question with complete accuracy.${domOptionsHint}
+  const prompt = `You are an elite academic test solver with multimodal vision capabilities and flawless logical reasoning.
+Analyze the provided cropped screenshot of a test or quiz question with 100% precision.
+
+CRITICAL RULES & TRAP PREVENTION:
+1. IGNORE PRE-EXISTING SELECTIONS (ZERO BIAS):
+   - Completely ignore any radio buttons that are already checked, checkmarks, colored rings, or user highlights visible in the image.
+   - Do NOT assume a highlighted or checked option is correct. Solve objectively from fundamental academic principles.
+2. TRAP WORDS DETECTION:
+   - Scrutinize the question for negative qualifiers like "NOT", "EXCEPT", "LEAST", "FALSE", "INCORRECT", "NEVER".
+   - If the question asks which statement is NOT true, eliminate all true statements.
+3. HYBRID ACCURACY (Chain-of-Thought Elimination):
+   - In "analysis", transcribe key terms, rigorously disprove incorrect choices, and prove the single undeniably correct choice before outputting "correctOption".
+${domTextSection}
 
 Return strictly valid JSON with this exact schema (no markdown, no backticks):
 {
-  "questionText": "<transcribed question text>",
+  "analysis": "<Methodical elimination of incorrect distractors and proof of the correct answer>",
+  "questionText": "<clean transcription of question>",
   "isMultiSelect": true | false,
   "correctOption": "A" | "B" | "C" | "D" | null,
   "correctOptions": ["A"],
   "dropdownAnswers": ["<chosen option text for Blank 1>", "<chosen option text for Blank 2>"] | null,
   "answerText": "<exact text of option(s), chosen dropdown answers separated by ➔, or concise write-in answer>",
-  "explanation": "<1-2 short sentences explaining why this answer is correct>"
-}`;
+  "explanation": "<1-2 short sentences summarizing the scientific/academic rationale>"
+};`;
 
   let lastError = null;
 

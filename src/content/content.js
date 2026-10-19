@@ -182,118 +182,104 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       const targetOptions = Array.isArray(q.correctOptions) && q.correctOptions.length > 0
         ? q.correctOptions
         : (q.correctOption ? [q.correctOption] : []);
+      const cleanTargetOptions = targetOptions.map(o => (o || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase());
+      const cleanAnswerText = (q.answerText || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
       const isMulti = q.isMultiSelect || targetOptions.length > 1 || !!targetCard.querySelector('.multi-option-input');
 
-      if (isMulti && targetOptions.length > 0) {
-        // Multi-select branch
-        const checkboxes = Array.from(targetCard.querySelectorAll('.multi-option-input, .option-checkbox, input[type="checkbox"]'));
-        if (checkboxes.length > 0) {
-          checkboxes.forEach((cb, cbIdx) => {
-            const letter = String.fromCharCode(65 + cbIdx);
-            const label = cb.closest('.option-label, label') || cb.parentElement;
-            const optLetter = (label?.querySelector('.option-letter, [class*="letter"]')?.innerText || '')
-              .replace(/[^A-Za-z]/g, '').toUpperCase() || letter;
-            const optText = (label?.querySelector('.option-text')?.innerText || cb.value || label?.innerText || '')
-              .replace(/^[A-Za-z][.)]\s*/, '').trim().toLowerCase();
-            const cbVal = (cb.value || '').trim().toLowerCase();
+      const inputs = Array.from(targetCard.querySelectorAll(
+        'input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]'
+      ));
 
-            const isMatch = targetOptions.some(opt => {
-              const o = opt.trim().toUpperCase();
-              const oLow = opt.trim().toLowerCase();
-              return o === optLetter ||
-                     o === letter ||
-                     (optText && oLow === optText) ||
-                     (cbVal && oLow === cbVal) ||
-                     (q.answerText && optText && q.answerText.toLowerCase().includes(optText));
-            });
+      if (inputs.length > 0 && targetOptions.length > 0) {
+        let anyMatched = false;
+        inputs.forEach((input, idx) => {
+          const indexLetter = String.fromCharCode(65 + idx);
+          const label = (input.id ? targetCard.querySelector(`label[for="${CSS.escape(input.id)}"]`) : null) ||
+            input.closest('.option-label, label') ||
+            input.parentElement;
 
-            cb.checked = isMatch;
-            if (label) {
-              if (isMatch) {
-                label.classList.add('is-selected');
-              } else {
-                label.classList.remove('is-selected');
-              }
-            }
-            cb.dispatchEvent(new Event('change', { bubbles: true }));
-          });
-        } else {
-          const labels = Array.from(targetCard.querySelectorAll('.option-label, label, button[class*="option"]'));
-          labels.forEach((label, lIdx) => {
-            const letter = String.fromCharCode(65 + lIdx);
-            const optLetter = (label.querySelector('.option-letter, [class*="letter"]')?.innerText || '')
-              .replace(/[^A-Za-z]/g, '').toUpperCase() || letter;
-            const optText = (label.querySelector('.option-text')?.innerText || label.innerText || '')
-              .replace(/^[A-Za-z][.)]\s*/, '').trim().toLowerCase();
+          const explicitLetter = (label?.querySelector('.option-letter, [class*="letter"]')?.innerText || '')
+            .replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+          const inputLetter = explicitLetter || indexLetter;
 
-            const isMatch = targetOptions.some(opt => {
-              const o = opt.trim().toUpperCase();
-              const oLow = opt.trim().toLowerCase();
-              return o === optLetter || o === letter || (optText && oLow === optText);
-            });
+          const optText = (label?.querySelector('.option-text')?.innerText || label?.innerText || input.value || '')
+            .replace(/^[A-Za-z][.)]\s*/, '').trim().toLowerCase();
+          const normOptText = optText.replace(/[^a-z0-9]/g, '');
 
+          const isMatch = cleanTargetOptions.includes(inputLetter) ||
+                          cleanTargetOptions.includes(indexLetter) ||
+                          (cleanAnswerText && normOptText && (cleanAnswerText === normOptText || cleanAnswerText.includes(normOptText) || normOptText.includes(cleanAnswerText)));
+
+          if (isMatch) anyMatched = true;
+
+          if (input.type === 'checkbox') {
             if (isMatch) {
-              label.classList.add('is-selected');
-              label.click();
+              if (!input.checked) {
+                try { input.click(); } catch (_) {}
+              }
+              input.checked = true;
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+              if (label) label.classList.add('is-selected');
             } else {
-              label.classList.remove('is-selected');
+              if (!isMulti && input.checked) {
+                try { input.click(); } catch (_) {}
+                input.checked = false;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+              }
+              if (label) label.classList.remove('is-selected');
             }
-          });
+          } else {
+            if (isMatch) {
+              if (!input.checked) {
+                try { input.click(); } catch (_) {}
+              }
+              input.checked = true;
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+              if (label) label.classList.add('is-selected');
+            } else {
+              input.checked = false;
+              if (label) label.classList.remove('is-selected');
+            }
+          }
+        });
+
+        if (anyMatched) {
+          targetCard.classList.add('answered');
+          filledCount++;
         }
-        targetCard.classList.add('answered');
-        filledCount++;
-      } else if (q.type === 'mcq' || targetOptions.length > 0) {
-        // Single choice branch (100% backward compatible)
+      } else if (targetOptions.length > 0) {
         const labels = Array.from(targetCard.querySelectorAll(
           '.option-label, label, button[class*="option"], div.option, li[class*="option"], div[class*="choice"]'
         ));
 
-        let matchedLabel = null;
-        const singleOption = targetOptions[0] || q.correctOption;
-        if (singleOption) {
-          matchedLabel = labels.find(label => {
-            const letter = (label.querySelector('.option-letter, [class*="letter"]')?.innerText || label.innerText || '').toUpperCase();
-            return letter.startsWith(singleOption) || letter.includes(`${singleOption})`) || letter.includes(`${singleOption}.`);
-          });
-        }
+        let anyMatched = false;
+        labels.forEach((label, idx) => {
+          const indexLetter = String.fromCharCode(65 + idx);
+          const explicitLetter = (label.querySelector('.option-letter, [class*="letter"]')?.innerText || '')
+            .replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+          const inputLetter = explicitLetter || indexLetter;
 
-        if (!matchedLabel && q.answerText) {
-          const cleanAns = q.answerText.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-          matchedLabel = labels.find(label => {
-            const optText = (label.querySelector('.option-text')?.innerText || label.innerText || '')
-              .trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-            return optText && (optText.includes(cleanAns) || cleanAns.includes(optText));
-          });
-        }
+          const optText = (label.querySelector('.option-text')?.innerText || label.innerText || '')
+            .replace(/^[A-Za-z][.)]\s*/, '').trim().toLowerCase();
+          const normOptText = optText.replace(/[^a-z0-9]/g, '');
 
-        if (matchedLabel) {
-          const parentOpt = matchedLabel.closest('.option, .option-label, label, div[class*="choice"]') || matchedLabel;
-          const checkbox = matchedLabel.querySelector('.option-checkbox, input[type="checkbox"], input[type="radio"]') ||
-            parentOpt.querySelector('.option-checkbox, input[type="checkbox"], input[type="radio"]') ||
-            (matchedLabel.getAttribute('for') ? targetCard.querySelector('#' + CSS.escape(matchedLabel.getAttribute('for'))) : null);
+          const isMatch = cleanTargetOptions.includes(inputLetter) ||
+                          cleanTargetOptions.includes(indexLetter) ||
+                          (cleanAnswerText && normOptText && (cleanAnswerText === normOptText || cleanAnswerText.includes(normOptText) || normOptText.includes(cleanAnswerText)));
 
-          if (checkbox) {
-            targetCard.querySelectorAll('.option-checkbox, input[type="checkbox"], input[type="radio"]').forEach(cb => {
-              if (cb !== checkbox) {
-                cb.checked = false;
-                cb.closest('.option-label, label, div.option, div[class*="choice"]')?.classList.remove('is-selected');
-              }
-            });
-
-            checkbox.checked = true;
-            matchedLabel.classList.add('is-selected');
-            parentOpt.classList.add('is-selected');
-
-            try { checkbox.click(); } catch (_) {}
-            try { matchedLabel.click(); } catch (_) {}
-
-            checkbox.dispatchEvent(new Event('change', { bubbles: true }));
-            checkbox.dispatchEvent(new Event('input', { bubbles: true }));
+          if (isMatch) {
+            anyMatched = true;
+            label.classList.add('is-selected');
+            try { label.click(); } catch (_) {}
           } else {
-            matchedLabel.classList.add('is-selected');
-            parentOpt.classList.add('is-selected');
-            try { matchedLabel.click(); } catch (_) {}
+            label.classList.remove('is-selected');
           }
+        });
+
+        if (anyMatched) {
           targetCard.classList.add('answered');
           filledCount++;
         }
@@ -574,7 +560,6 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       }
       /* Stealth Mode Styles */
       .agy-stealth-mark {
-        border-bottom: 2.5px solid #10b981 !important;
         position: relative !important;
         transition: all 0.2s ease !important;
       }
@@ -723,7 +708,62 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     }, 2500);
   }
 
+  /**
+   * Intelligently resolves the full outermost question card container,
+   * avoiding inner text elements (like .question_text) and verifying options presence.
+   */
+  function hasQuestionInputs(el) {
+    if (!el || !(el instanceof Element)) return false;
+    return !!el.querySelector(
+      'input[type="radio"], input[type="checkbox"], select, textarea, .option, .option-label, label, [class*="answer"], [class*="choice"]'
+    );
+  }
+
+  function findQuestionCard(target) {
+    if (!target || !(target instanceof Element)) return null;
+
+    // 1. Try primary outer card selectors (prioritizing full quiz question containers like Canvas LMS, Moodle, custom cards)
+    const outerCardSelectors = [
+      'div.display_question',
+      'div[id^="question_"].question',
+      'div[id^="question_"]',
+      '.question-card',
+      'article[id^="card_"]',
+      'div[class*="question-card"]',
+      'fieldset[class*="question"]',
+      'div.quiz_sortable'
+    ].join(', ');
+
+    let card = target.closest(outerCardSelectors);
+
+    // 2. If not matched, try broader selectors while excluding inner text wrappers
+    if (!card) {
+      card = target.closest(
+        'div[class*="question"]:not([class*="text"]):not([class*="title"]):not([class*="body"]):not([class*="prompt"]):not([class*="content"]):not([class*="holder"]):not([class*="name"])'
+      );
+    }
+
+    // 3. Fallback: If matched element or target lacks options (e.g. user clicked inner .question_text), walk up to real container
+    if (!card || !hasQuestionInputs(card)) {
+      let current = (card && card.parentElement) ? card.parentElement : target.parentElement;
+      while (current && current !== document.body && current !== document.documentElement) {
+        if (hasQuestionInputs(current) && (
+          current.id?.toLowerCase().includes('question') ||
+          current.className?.toString().toLowerCase().includes('question') ||
+          current.tagName === 'ARTICLE' ||
+          current.tagName === 'FIELDSET'
+        )) {
+          return current;
+        }
+        current = current.parentElement;
+      }
+    }
+
+    return card || target.closest('.question-card, article[id^="card_"], div[class*="question-card"], div[class*="question"]');
+  }
+
   document.addEventListener('dblclick', async (e) => {
+    let card = null;
     try {
       const storage = await getStorageData([
         'solver_mode',
@@ -759,15 +799,17 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       if (mode === 'stealth' && storage.stealth_double_click === false) return;
       if (mode === 'explain' && storage.enable_double_click === false && storage.explain_autofill === false) return;
 
-      const card = e.target.closest(
-        '.question-card, article[id^="card_"], div[class*="question-card"], div[class*="question"]'
-      );
+      card = findQuestionCard(e.target);
       if (!card) return;
 
       window.getSelection()?.removeAllRanges();
 
       if (card.dataset.agySolving === 'true') return;
       card.dataset.agySolving = 'true';
+      // Fail-safe auto release lock after 2s in case of any unhandled network delay
+      setTimeout(() => {
+        if (card) card.dataset.agySolving = 'false';
+      }, 2000);
 
       injectInteractiveStyles();
 
@@ -848,7 +890,6 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     } catch (err) {
       console.warn('[Interactive Solver Error]:', err);
     } finally {
-      const card = e.target.closest('.question-card, article[id^="card_"]');
       if (card) card.dataset.agySolving = 'false';
     }
   });
@@ -964,119 +1005,96 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     const targetOptions = Array.isArray(result.correctOptions) && result.correctOptions.length > 0
       ? result.correctOptions
       : (result.correctOption ? [result.correctOption] : []);
+    const cleanTargetOptions = targetOptions.map(o => (o || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase());
+    const cleanAnswerText = (result.answerText || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
     const isMulti = result.isMultiSelect || targetOptions.length > 1 || !!card.querySelector('.multi-option-input');
 
-    if (isMulti && targetOptions.length > 0) {
-      // Multi-select branch
-      const checkboxes = Array.from(card.querySelectorAll('.multi-option-input, .option-checkbox, input[type="checkbox"]'));
-      if (checkboxes.length > 0) {
-        checkboxes.forEach((cb, idx) => {
-          const letter = String.fromCharCode(65 + idx);
-          const label = cb.closest('.option-label, label') || cb.parentElement;
-          const optLetter = (label?.querySelector('.option-letter, [class*="letter"]')?.innerText || '')
-            .replace(/[^A-Za-z]/g, '').toUpperCase() || letter;
-          const optText = (label?.querySelector('.option-text')?.innerText || cb.value || label?.innerText || '')
-            .replace(/^[A-Za-z][.)]\s*/, '').trim().toLowerCase();
-          const cbVal = (cb.value || '').trim().toLowerCase();
+    const inputs = Array.from(card.querySelectorAll(
+      'input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]'
+    ));
 
-          const isMatch = targetOptions.some(opt => {
-            const o = opt.trim().toUpperCase();
-            const oLow = opt.trim().toLowerCase();
-            return o === optLetter ||
-                   o === letter ||
-                   (optText && oLow === optText) ||
-                   (cbVal && oLow === cbVal) ||
-                   (result.answerText && optText && result.answerText.toLowerCase().includes(optText));
-          });
+    if (inputs.length > 0 && targetOptions.length > 0) {
+      inputs.forEach((input, idx) => {
+        const indexLetter = String.fromCharCode(65 + idx);
+        const label = (input.id ? card.querySelector(`label[for="${CSS.escape(input.id)}"]`) : null) ||
+          input.closest('.option-label, label') ||
+          input.parentElement;
 
-          cb.checked = isMatch;
-          if (label) {
-            if (isMatch) {
-              label.classList.add('is-selected');
-            } else {
-              label.classList.remove('is-selected');
-            }
-          }
-          cb.dispatchEvent(new Event('change', { bubbles: true }));
-        });
-      } else {
-        const labels = Array.from(card.querySelectorAll('.option-label, label, button[class*="option"]'));
-        labels.forEach((label, idx) => {
-          const letter = String.fromCharCode(65 + idx);
-          const optLetter = (label.querySelector('.option-letter, [class*="letter"]')?.innerText || '')
-            .replace(/[^A-Za-z]/g, '').toUpperCase() || letter;
-          const optText = (label.querySelector('.option-text')?.innerText || label.innerText || '')
-            .replace(/^[A-Za-z][.)]\s*/, '').trim().toLowerCase();
+        const explicitLetter = (label?.querySelector('.option-letter, [class*="letter"]')?.innerText || '')
+          .replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const inputLetter = explicitLetter || indexLetter;
 
-          const isMatch = targetOptions.some(opt => {
-            const o = opt.trim().toUpperCase();
-            const oLow = opt.trim().toLowerCase();
-            return o === optLetter || o === letter || (optText && oLow === optText);
-          });
+        const optText = (label?.querySelector('.option-text')?.innerText || label?.innerText || input.value || '')
+          .replace(/^[A-Za-z][.)]\s*/, '').trim().toLowerCase();
+        const normOptText = optText.replace(/[^a-z0-9]/g, '');
 
+        const isMatch = cleanTargetOptions.includes(inputLetter) ||
+                        cleanTargetOptions.includes(indexLetter) ||
+                        (cleanAnswerText && normOptText && (cleanAnswerText === normOptText || cleanAnswerText.includes(normOptText) || normOptText.includes(cleanAnswerText)));
+
+        if (input.type === 'checkbox') {
           if (isMatch) {
-            label.classList.add('is-selected');
-            label.click();
+            // Smart Click Guard: only click if currently unchecked to prevent toggle cancellation
+            if (!input.checked) {
+              try { input.click(); } catch (_) {}
+            }
+            input.checked = true;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            if (label) label.classList.add('is-selected');
           } else {
-            label.classList.remove('is-selected');
+            // Single choice checkbox (like Canvas multi-answer with 1 answer): uncheck distractors
+            if (!isMulti && input.checked) {
+              try { input.click(); } catch (_) {}
+              input.checked = false;
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            if (label) label.classList.remove('is-selected');
           }
-        });
-      }
+        } else {
+          // Radio buttons or other inputs
+          if (isMatch) {
+            if (!input.checked) {
+              try { input.click(); } catch (_) {}
+            }
+            input.checked = true;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            if (label) label.classList.add('is-selected');
+          } else {
+            input.checked = false;
+            if (label) label.classList.remove('is-selected');
+          }
+        }
+      });
     } else if (targetOptions.length > 0) {
-      // Single choice branch (100% backward compatible)
+      // Fallback for custom div/button options without standard <input> tags
       const labels = Array.from(card.querySelectorAll(
         '.option-label, label, button[class*="option"], div.option, li[class*="option"], div[class*="choice"]'
       ));
 
-      const singleOption = targetOptions[0];
-      const cleanSingle = (singleOption || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      let targetLabel = labels.find((l, idx) => {
-        const letter = (l.querySelector('.option-letter, [class*="letter"]')?.innerText || '')
-          .replace(/[^A-Za-z0-9]/g, '').toUpperCase() || String.fromCharCode(65 + idx);
-        return letter === cleanSingle || letter.startsWith(cleanSingle) || cleanSingle.startsWith(letter);
-      });
+      labels.forEach((label, idx) => {
+        const indexLetter = String.fromCharCode(65 + idx);
+        const explicitLetter = (label.querySelector('.option-letter, [class*="letter"]')?.innerText || '')
+          .replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const inputLetter = explicitLetter || indexLetter;
 
-      if (!targetLabel && result.answerText) {
-        const cleanAns = result.answerText.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-        targetLabel = labels.find(l => {
-          const text = (l.querySelector('.option-text')?.innerText || l.innerText || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-          return text && (text.includes(cleanAns) || cleanAns.includes(text));
-        });
-      }
+        const optText = (label.querySelector('.option-text')?.innerText || label.innerText || '')
+          .replace(/^[A-Za-z][.)]\s*/, '').trim().toLowerCase();
+        const normOptText = optText.replace(/[^a-z0-9]/g, '');
 
-      if (targetLabel) {
-        const parentOpt = targetLabel.closest('.option, .option-label, label, div[class*="choice"]') || targetLabel;
-        const checkbox = targetLabel.querySelector('.option-checkbox, input[type="checkbox"], input[type="radio"]') ||
-          parentOpt.querySelector('.option-checkbox, input[type="checkbox"], input[type="radio"]') ||
-          (targetLabel.getAttribute('for') ? card.querySelector('#' + CSS.escape(targetLabel.getAttribute('for'))) : null);
+        const isMatch = cleanTargetOptions.includes(inputLetter) ||
+                        cleanTargetOptions.includes(indexLetter) ||
+                        (cleanAnswerText && normOptText && (cleanAnswerText === normOptText || cleanAnswerText.includes(normOptText) || normOptText.includes(cleanAnswerText)));
 
-        if (checkbox) {
-          card.querySelectorAll('.option-checkbox, input[type="checkbox"], input[type="radio"]').forEach(cb => {
-            if (cb !== checkbox) {
-              cb.checked = false;
-              cb.closest('.option-label, label, div.option, div[class*="choice"]')?.classList.remove('is-selected');
-            }
-          });
-
-          checkbox.checked = true;
-          targetLabel.classList.add('is-selected');
-          parentOpt.classList.add('is-selected');
-
-          try {
-            checkbox.click();
-          } catch (_) {}
-          try {
-            targetLabel.click();
-          } catch (_) {}
-
-          checkbox.dispatchEvent(new Event('change', { bubbles: true }));
-          checkbox.dispatchEvent(new Event('input', { bubbles: true }));
+        if (isMatch) {
+          label.classList.add('is-selected');
+          try { label.click(); } catch (_) {}
         } else {
-          targetLabel.classList.add('is-selected');
-          parentOpt.classList.add('is-selected');
-          try { targetLabel.click(); } catch (_) {}
+          label.classList.remove('is-selected');
         }
-      }
+      });
     } else if (result.answerText) {
       const input = card.querySelector('.text-input-field, input[type="text"], input:not([type]), textarea');
       if (input) {
@@ -1515,12 +1533,10 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       showSideAnswerBanner({ question: 'Analyzing Snip Selection...' }, null, true);
     }
 
-    // Find any question card container overlapping the selection
-    const targetCard = document.elementFromPoint(cropX + cropWidth / 2, cropY + cropHeight / 2)?.closest(
-      '.question-card, article[id^="card_"], div[class*="question-card"], div[class*="question"]'
-    ) || document.elementFromPoint(cropX + 20, cropY + 20)?.closest(
-      '.question-card, article[id^="card_"], div[class*="question-card"], div[class*="question"]'
-    );
+    // Find any question card container overlapping the selection using smart resolver
+    const centerEl = document.elementFromPoint(cropX + cropWidth / 2, cropY + cropHeight / 2);
+    const cornerEl = document.elementFromPoint(cropX + 20, cropY + 20);
+    const targetCard = findQuestionCard(centerEl) || findQuestionCard(cornerEl);
 
     if (targetCard && mode !== 'invisible') {
       targetCard.classList.add('agy-card-solving');
@@ -1542,11 +1558,44 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       // Collect any DOM options labels inside crop box to assist model accuracy
       const optionsList = extractOptionsInsideBox(cropBox);
 
-      // 3. Request Gemini Multimodal Vision solver
+      // Hybrid Fusion (Option 1): Extract clean DOM text if available to guarantee 100% OCR precision
+      let domContext = null;
+      if (targetCard) {
+        try {
+          domContext = extractSingleCardData(targetCard);
+        } catch (e) {
+          console.warn('[Snip Hybrid] Failed to extract targetCard data:', e);
+        }
+      }
+
+      if (!domContext || !domContext.question) {
+        try {
+          const headingsOrP = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, p, legend, .question-text, [class*="title"]'));
+          const insideHeadings = headingsOrP.filter(el => {
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 &&
+              r.left >= cropBox.x - 25 &&
+              r.right <= cropBox.x + cropBox.width + 25 &&
+              r.top >= cropBox.y - 25 &&
+              r.bottom <= cropBox.y + cropBox.height + 25;
+          });
+          const fallbackQ = insideHeadings.map(el => el.innerText.trim()).filter(Boolean).join(' ');
+          if (fallbackQ || (optionsList && optionsList.length > 0)) {
+            domContext = {
+              question: fallbackQ || '',
+              options: optionsList.map((txt, i) => ({ label: String.fromCharCode(65 + i), text: txt })),
+              isMultiHint: false
+            };
+          }
+        } catch (_) {}
+      }
+
+      // 3. Request Gemini Multimodal Vision solver with Hybrid DOM Context
       const solveRes = await safeSendMessage({
         action: 'SOLVE_IMAGE_QUESTION',
         imageData: croppedImage,
-        optionsList
+        optionsList,
+        domContext
       });
 
       if (targetCard && mode !== 'invisible') {

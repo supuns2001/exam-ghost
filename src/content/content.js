@@ -2,6 +2,22 @@
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   console.log('[Worksheet Extractor] Content script loaded.');
 
+  // Master Power State (Real-time synchronization across all tabs)
+  let isExtensionActive = true;
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get({ extension_active: true }, (res) => {
+      if (typeof res.extension_active !== 'undefined') {
+        isExtensionActive = res.extension_active;
+      }
+    });
+
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName === 'local' && changes.extension_active) {
+        isExtensionActive = changes.extension_active.newValue;
+      }
+    });
+  }
+
   // Listen for messages from popup
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'EXTRACT_QUESTIONS_WITH_SCROLL') {
@@ -22,6 +38,10 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     }
 
     if (request.action === 'TRIGGER_SNIP_MODE') {
+      if (!isExtensionActive) {
+        sendResponse({ success: false, error: 'Extension is turned OFF' });
+        return true;
+      }
       activateSnipMode();
       sendResponse({ success: true });
       return true;
@@ -341,9 +361,9 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
       }
       @keyframes agySuccessGlow {
-        0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-        70% { box-shadow: 0 0 0 14px rgba(16, 185, 129, 0); }
-        100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        0% { box-shadow: 0 0 0 0 rgba(61, 220, 151, 0.7); }
+        70% { box-shadow: 0 0 0 14px rgba(61, 220, 151, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(61, 220, 151, 0); }
       }
       .agy-card-solving {
         outline: 2px solid #6366f1 !important;
@@ -352,7 +372,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         transition: all 0.3s ease !important;
       }
       .agy-card-success {
-        outline: 2px solid #10b981 !important;
+        outline: 2px solid #3DDC97 !important;
         animation: agySuccessGlow 1.2s ease-out !important;
       }
       .agy-floating-toast {
@@ -360,8 +380,8 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         top: -38px;
         right: 12px;
         background: #111827;
-        color: #34d399;
-        border: 1px solid rgba(16, 185, 129, 0.4);
+        color: #3DDC97;
+        border: 1px solid rgba(61, 220, 151, 0.4);
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
         padding: 5px 12px;
         border-radius: 20px;
@@ -481,13 +501,13 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         text-overflow: ellipsis !important;
       }
       .agy-banner-answer-card {
-        background: rgba(16, 185, 129, 0.12) !important;
-        border: 1px solid rgba(16, 185, 129, 0.3) !important;
+        background: rgba(61, 220, 151, 0.12) !important;
+        border: 1px solid rgba(61, 220, 151, 0.3) !important;
         border-radius: 8px !important;
         padding: 9px 12px !important;
       }
       .agy-banner-answer-val {
-        color: #34d399 !important;
+        color: #3DDC97 !important;
         font-size: 13.5px !important;
         font-weight: 700 !important;
         word-break: break-word !important;
@@ -508,7 +528,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       }
       .agy-banner-progress-fill {
         height: 100% !important;
-        background: #10b981 !important;
+        background: #3DDC97 !important;
         width: 100% !important;
         transition: width 0.1s linear !important;
       }
@@ -551,9 +571,9 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       }
       #agy-snip-selection {
         position: fixed !important;
-        border: 2px dashed #10b981 !important;
-        background: rgba(16, 185, 129, 0.14) !important;
-        box-shadow: 0 0 20px rgba(16, 185, 129, 0.4), inset 0 0 15px rgba(16, 185, 129, 0.12) !important;
+        border: 2px dashed #3DDC97 !important;
+        background: rgba(61, 220, 151, 0.14) !important;
+        box-shadow: 0 0 20px rgba(61, 220, 151, 0.4), inset 0 0 15px rgba(61, 220, 151, 0.12) !important;
         pointer-events: none !important;
         z-index: 2147483647 !important;
         border-radius: 5px !important;
@@ -565,7 +585,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       }
       .agy-stealth-mark::after {
         content: " ✓" !important;
-        color: #10b981 !important;
+        color: #3DDC97 !important;
         font-weight: 700 !important;
         font-size: 11px !important;
         margin-left: 5px !important;
@@ -577,13 +597,13 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         background: rgba(10, 14, 20, 0.94) !important;
         backdrop-filter: blur(14px) !important;
         -webkit-backdrop-filter: blur(14px) !important;
-        color: #10b981 !important;
+        color: #3DDC97 !important;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
         font-size: 12.5px !important;
         font-weight: 700 !important;
         padding: 7px 16px !important;
         border-radius: 999px !important;
-        border: 1px solid rgba(16, 185, 129, 0.4) !important;
+        border: 1px solid rgba(61, 220, 151, 0.4) !important;
         box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5) !important;
         z-index: 2147483647 !important;
         animation: agyFadeIn 0.25s ease !important;
@@ -763,9 +783,13 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   }
 
   document.addEventListener('dblclick', async (e) => {
+    // Master Power Guard: Instant return if extension is turned OFF
+    if (!isExtensionActive) return;
+
     let card = null;
     try {
       const storage = await getStorageData([
+        'extension_active',
         'solver_mode',
         'enable_double_click',
         'invisible_autofill',
@@ -779,7 +803,9 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         'explain_side_banner',
         'show_side_banner'
       ], {
+        extension_active: true,
         solver_mode: 'stealth',
+        enable_double_click: true,
         invisible_autofill: true,
         invisible_clipboard: true,
         invisible_double_click: true,
@@ -792,12 +818,16 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         show_side_banner: true
       });
 
+      // Master Power Guard check from storage
+      if (storage.extension_active === false) return;
+
       const mode = storage.solver_mode || 'stealth';
 
-      // Check if double click is enabled for this mode
+      // Check if double click is enabled
+      if (storage.enable_double_click === false) return;
       if (mode === 'invisible' && storage.invisible_double_click === false) return;
       if (mode === 'stealth' && storage.stealth_double_click === false) return;
-      if (mode === 'explain' && storage.enable_double_click === false && storage.explain_autofill === false) return;
+      if (mode === 'explain' && storage.explain_autofill === false) return;
 
       card = findQuestionCard(e.target);
       if (!card) return;
@@ -1784,8 +1814,8 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     }
     if (mode === 'stealth') {
       pill.innerHTML = `<span>🥷 <strong>Stealth Mode</strong> Active (Alt+2)</span>`;
-      pill.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-      pill.style.color = '#10b981';
+      pill.style.borderColor = 'rgba(61, 220, 151, 0.4)';
+      pill.style.color = '#3DDC97';
     } else if (mode === 'explain') {
       pill.innerHTML = `<span>📚 <strong>Explain Mode</strong> Active (Alt+3)</span>`;
       pill.style.borderColor = 'rgba(56, 189, 248, 0.4)';
@@ -1798,32 +1828,42 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     }, 1300);
   }
 
-  // Keyboard shortcut listeners:
+  // Keyboard shortcut listeners (Cross-platform: Windows, Mac, Linux):
   // Alt + 1 -> Invisible Mode
   // Alt + 2 -> Stealth Mode
   // Alt + 3 -> Explain Mode
   // Alt + S -> Snip Tool
   window.addEventListener('keydown', (e) => {
+    // Master Power Guard: Do not trigger any shortcuts if extension is turned OFF
+    if (!isExtensionActive) return;
+
     if (e.altKey) {
-      if (e.key === '1') {
+      // 1 -> Invisible (Mac Option+1 produces '¡', e.code is 'Digit1')
+      if (e.code === 'Digit1' || e.key === '1' || e.key === '¡') {
         e.preventDefault();
         if (typeof chrome !== 'undefined' && chrome?.storage?.local) {
           chrome.storage.local.set({ solver_mode: 'invisible' });
         }
         showModeSwitchNotification('invisible');
-      } else if (e.key === '2') {
+      } 
+      // 2 -> Stealth (Mac Option+2 produces '™', e.code is 'Digit2')
+      else if (e.code === 'Digit2' || e.key === '2' || e.key === '™') {
         e.preventDefault();
         if (typeof chrome !== 'undefined' && chrome?.storage?.local) {
           chrome.storage.local.set({ solver_mode: 'stealth' });
         }
         showModeSwitchNotification('stealth');
-      } else if (e.key === '3') {
+      } 
+      // 3 -> Explain (Mac Option+3 produces '£', e.code is 'Digit3')
+      else if (e.code === 'Digit3' || e.key === '3' || e.key === '£') {
         e.preventDefault();
         if (typeof chrome !== 'undefined' && chrome?.storage?.local) {
           chrome.storage.local.set({ solver_mode: 'explain' });
         }
         showModeSwitchNotification('explain');
-      } else if (e.key === 's' || e.key === 'S') {
+      } 
+      // S -> Snip Tool (Mac Option+S produces 'ß', e.code is 'KeyS')
+      else if (e.code === 'KeyS' || (e.key && e.key.toLowerCase() === 's') || e.key === 'ß') {
         e.preventDefault();
         activateSnipMode();
       }

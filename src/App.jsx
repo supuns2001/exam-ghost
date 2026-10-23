@@ -1,36 +1,35 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  Play,
   Copy,
   Check,
-  Sparkles,
   Sliders,
-  Settings,
   AlertCircle,
   Download,
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Zap,
-  HelpCircle,
-  MousePointerClick,
   Crop,
   Sun,
   Moon,
   EyeOff,
   Shield,
-  ShieldAlert,
   BookOpen,
-  Key
+  Lock,
+  MessageCircle,
+  Mail,
+  ChevronLeft,
+  CheckCircle2,
+  HelpCircle,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import './App.css';
 
 const DEFAULT_API_KEY = '';
 const MODELS_TO_TRY = ['gemini-3.1-flash-lite', 'gemini-3.7-flash', 'gemini-flash-lite-latest', 'gemini-3.5-flash-lite', 'gemini-3.8-flash'];
+const DISCORD_URL = 'https://discord.gg/studyassistant';
+const SUPPORT_EMAIL = 'support@studyassistant.ai';
 
 export default function App() {
   const [apiKey, setApiKey] = useState(DEFAULT_API_KEY);
-  const [showSettings, setShowSettings] = useState(false);
+  const [apiKeySaved, setApiKeySaved] = useState(false);
   const [activeTab, setActiveTab] = useState(null);
   const [theme, setTheme] = useState('dark'); // 'dark' | 'light'
 
@@ -38,6 +37,116 @@ export default function App() {
   const [solverMode, setSolverMode] = useState('stealth');
   const tabRefs = useRef({});
   const [indicatorStyle, setIndicatorStyle] = useState({ transform: 'translateX(0px)', width: '0px', opacity: 0 });
+
+  // Mode 1: Invisible Toggles
+  const [invisibleAutoFill, setInvisibleAutoFill] = useState(true);
+  const [invisibleClipboardCopy, setInvisibleClipboardCopy] = useState(true);
+  const [_invisibleDoubleClick, setInvisibleDoubleClick] = useState(true);
+
+  // Mode 2: Stealth Toggles
+  const [stealthHighlightOnly, setStealthHighlightOnly] = useState(false);
+  const [stealthAutoFill, setStealthAutoFill] = useState(true);
+  const [_stealthDoubleClick, setStealthDoubleClick] = useState(true);
+
+  // Master Power Switch (Global ON / OFF)
+  const [extensionActive, setExtensionActive] = useState(true);
+
+  // Global Preferences (Fallback in Settings)
+  const [enableDoubleClick, setEnableDoubleClick] = useState(true);
+
+  // Mode 3: Explain Toggles
+  const [explainAutoFill, setExplainAutoFill] = useState(true);
+  const [explainSideBanner, setExplainSideBanner] = useState(true);
+  const [explainDetailed, setExplainDetailed] = useState(true);
+
+  // Snip Tool Option
+  const [_snipAutoFill, setSnipAutoFill] = useState(true);
+
+  // Full Scan Processing States
+  const [_isScanning, setIsScanning] = useState(false);
+  const [_scanStep, setScanStep] = useState(''); // 'scrolling' | 'ai_processing' | 'autofilling' | ''
+  const [questionsData, setQuestionsData] = useState(null);
+  const [error, setError] = useState(null);
+  const [_copiedId, _setCopiedId] = useState(null);
+  const [copiedAll, setCopiedAll] = useState(false);
+  const [expandedExplanation, setExpandedExplanation] = useState({});
+  const [autoFillCount, setAutoFillCount] = useState(null);
+
+  // View Navigation ('main' | 'settings')
+  const [currentView, setCurrentView] = useState('main');
+
+  // Message Quota & License
+  const [usedMessages, setUsedMessages] = useState(50);
+  const [totalMessages, setTotalMessages] = useState(50);
+  const [licenseKey, setLicenseKey] = useState('');
+  const [licenseSuccess, setLicenseSuccess] = useState(false);
+
+  const saveStorage = (key, value) => {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({ [key]: value });
+    }
+  };
+
+  const handleToggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    saveStorage('theme_mode', nextTheme);
+  };
+
+  const handleSetSolverMode = (mode) => {
+    setSolverMode(mode);
+    saveStorage('solver_mode', mode);
+  };
+
+  const handleToggleDoubleClick = (val) => {
+    setEnableDoubleClick(val);
+    setInvisibleDoubleClick(val);
+    setStealthDoubleClick(val);
+    saveStorage('enable_double_click', val);
+    saveStorage('invisible_double_click', val);
+    saveStorage('stealth_double_click', val);
+  };
+
+  const handleSaveApiKey = (newKey) => {
+    setApiKey(newKey);
+    saveStorage('gemini_api_key', newKey);
+    setApiKeySaved(true);
+    setTimeout(() => setApiKeySaved(false), 2000);
+  };
+
+  const handleTriggerSnip = () => {
+    if (typeof chrome !== 'undefined' && chrome.tabs && activeTab?.id) {
+      chrome.tabs.sendMessage(activeTab.id, { action: 'TRIGGER_SNIP_MODE' });
+      window.close(); // Cleanly close popup so user can immediately snip on page
+    }
+  };
+
+  const handleActivateLicense = () => {
+    if (licenseKey.trim().length > 5) {
+      setTotalMessages(999);
+      setUsedMessages(0);
+      setLicenseSuccess(true);
+      saveStorage('used_messages_count', 0);
+      saveStorage('has_active_license', true);
+      setTimeout(() => {
+        setLicenseSuccess(false);
+        setCurrentView('main');
+      }, 1400);
+    }
+  };
+
+  const handleToggleMasterPower = () => {
+    const nextState = !extensionActive;
+    setExtensionActive(nextState);
+    saveStorage('extension_active', nextState);
+  };
+
+  const toggleExplanation = (id) => {
+    setExpandedExplanation((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
 
   useEffect(() => {
     const updateIndicator = () => {
@@ -58,41 +167,6 @@ export default function App() {
     };
   }, [solverMode]);
 
-  // Mode 1: Invisible Toggles
-  const [invisibleAutoFill, setInvisibleAutoFill] = useState(true);
-  const [invisibleClipboardCopy, setInvisibleClipboardCopy] = useState(true);
-  const [invisibleDoubleClick, setInvisibleDoubleClick] = useState(true);
-
-  // Mode 2: Stealth Toggles
-  const [stealthHighlightOnly, setStealthHighlightOnly] = useState(false);
-  const [stealthAutoFill, setStealthAutoFill] = useState(true);
-  const [stealthDoubleClick, setStealthDoubleClick] = useState(true);
-
-  // Mode 3: Explain Toggles
-  const [explainAutoFill, setExplainAutoFill] = useState(true);
-  const [explainSideBanner, setExplainSideBanner] = useState(true);
-  const [explainDetailed, setExplainDetailed] = useState(true);
-
-  // Snip Tool Option
-  const [snipAutoFill, setSnipAutoFill] = useState(true);
-
-  // Full Scan Processing States
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanStep, setScanStep] = useState(''); // 'scrolling' | 'ai_processing' | 'autofilling' | ''
-  const [questionsData, setQuestionsData] = useState(null);
-  const [error, setError] = useState(null);
-  const [copiedId, setCopiedId] = useState(null);
-  const [copiedAll, setCopiedAll] = useState(false);
-  const [expandedExplanation, setExpandedExplanation] = useState({});
-  const [autoFillCount, setAutoFillCount] = useState(null);
-
-  // Message Quota & License
-  const [usedMessages, setUsedMessages] = useState(32);
-  const [totalMessages, setTotalMessages] = useState(50);
-  const [showLicenseModal, setShowLicenseModal] = useState(false);
-  const [licenseKey, setLicenseKey] = useState('');
-  const [licenseSuccess, setLicenseSuccess] = useState(false);
-
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
       chrome.storage.local.get(
@@ -100,6 +174,7 @@ export default function App() {
           'gemini_api_key',
           'theme_mode',
           'solver_mode',
+          'enable_double_click',
           'invisible_autofill',
           'invisible_clipboard',
           'invisible_double_click',
@@ -110,18 +185,21 @@ export default function App() {
           'explain_side_banner',
           'explain_detailed',
           'snip_auto_fill',
-          'used_messages_count'
+          'used_messages_count',
+          'extension_active'
         ],
         (res) => {
           if (res) {
             if (res.gemini_api_key) setApiKey(res.gemini_api_key);
             if (res.theme_mode) setTheme(res.theme_mode);
+            if (typeof res.extension_active !== 'undefined') setExtensionActive(res.extension_active);
 
             // Map legacy solver_mode to new 3 modes
             if (res.solver_mode === 'full_scan') setSolverMode('explain');
             else if (res.solver_mode === 'dom_interactive') setSolverMode('stealth');
             else if (res.solver_mode) setSolverMode(res.solver_mode);
 
+            if (typeof res.enable_double_click !== 'undefined') setEnableDoubleClick(res.enable_double_click);
             if (typeof res.invisible_autofill !== 'undefined') setInvisibleAutoFill(res.invisible_autofill);
             if (typeof res.invisible_clipboard !== 'undefined') setInvisibleClipboardCopy(res.invisible_clipboard);
             if (typeof res.invisible_double_click !== 'undefined') setInvisibleDoubleClick(res.invisible_double_click);
@@ -171,63 +249,26 @@ export default function App() {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.altKey && ['1', '2', '3'].includes(e.key)) {
-        e.preventDefault();
-        if (e.key === '1') handleSetSolverMode('invisible');
-        else if (e.key === '2') handleSetSolverMode('stealth');
-        else if (e.key === '3') handleSetSolverMode('explain');
+      if (!extensionActive) return;
+      if (e.altKey) {
+        if (e.code === 'Digit1' || e.key === '1' || e.key === '¡') {
+          e.preventDefault();
+          handleSetSolverMode('invisible');
+        } else if (e.code === 'Digit2' || e.key === '2' || e.key === '™') {
+          e.preventDefault();
+          handleSetSolverMode('stealth');
+        } else if (e.code === 'Digit3' || e.key === '3' || e.key === '£') {
+          e.preventDefault();
+          handleSetSolverMode('explain');
+        } else if (e.code === 'KeyS' || (e.key && e.key.toLowerCase() === 's') || e.key === 'ß') {
+          e.preventDefault();
+          handleTriggerSnip();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  const saveStorage = (key, value) => {
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({ [key]: value });
-    }
-  };
-
-  const handleToggleTheme = () => {
-    const nextTheme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(nextTheme);
-    saveStorage('theme_mode', nextTheme);
-  };
-
-  const handleSetSolverMode = (mode) => {
-    setSolverMode(mode);
-    saveStorage('solver_mode', mode);
-  };
-
-  const handleSaveApiKey = (newKey) => {
-    setApiKey(newKey);
-    saveStorage('gemini_api_key', newKey);
-    setShowSettings(false);
-  };
-
-  const handleTriggerSnip = () => {
-    if (typeof chrome !== 'undefined' && chrome.tabs && activeTab?.id) {
-      chrome.tabs.sendMessage(activeTab.id, { action: 'TRIGGER_SNIP_MODE' });
-      window.close(); // Cleanly close popup so user can immediately snip on page
-    }
-  };
-
-  const handleActivateLicense = () => {
-    if (licenseKey.trim().length > 5) {
-      setTotalMessages(999);
-      setUsedMessages(0);
-      setLicenseSuccess(true);
-      saveStorage('used_messages_count', 0);
-      setTimeout(() => setShowLicenseModal(false), 1200);
-    }
-  };
-
-  const toggleExplanation = (id) => {
-    setExpandedExplanation((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }));
-  };
+  }, [activeTab, extensionActive]);
 
   // Full-Page Scan Logic
   const handleStartExtraction = async () => {
@@ -446,7 +487,7 @@ ${rawText.substring(0, 35000)}`;
       <header className="header">
         <div className="header-brand">
           <div className="brand-icon">
-            <Sparkles size={19} />
+            <img src="/icons/icon48.png" alt="Ghost Solver Logo" className="brand-logo-avatar" />
           </div>
           <div>
             <h1 className="brand-title">Study Assistant</h1>
@@ -460,83 +501,200 @@ ${rawText.substring(0, 35000)}`;
         </div>
 
         <div className="header-controls">
-          <button
-            className="icon-btn"
-            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
-            onClick={handleToggleTheme}
-          >
-            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
-          <button
-            className="icon-btn"
-            title="Settings & API Key"
-            onClick={() => setShowSettings(!showSettings)}
-          >
-            <Sliders size={16} />
-          </button>
+          {currentView === 'settings' ? (
+            <button
+              className="btn-back-header"
+              onClick={() => setCurrentView('main')}
+              title="Back to solver view"
+            >
+              <ChevronLeft size={16} />
+              <span>Back</span>
+            </button>
+          ) : (
+            <>
+              <button
+                className={`master-power-toggle ${extensionActive ? 'is-on' : 'is-off'}`}
+                onClick={handleToggleMasterPower}
+                title={extensionActive ? 'Extension is ON (Click to turn OFF)' : 'Extension is OFF (Click to turn ON)'}
+                aria-label="Toggle Extension Master Power"
+              >
+                <span className="power-status-dot"></span>
+                <span className="power-status-text">{extensionActive ? 'ON' : 'OFF'}</span>
+              </button>
+
+              <button
+                className="icon-btn"
+                title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+                onClick={handleToggleTheme}
+              >
+                {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+              </button>
+              <button
+                className="icon-btn"
+                title="Settings & License"
+                onClick={() => setCurrentView('settings')}
+              >
+                <Sliders size={16} />
+              </button>
+            </>
+          )}
         </div>
       </header>
 
-      {/* Settings Modal */}
-      {showSettings && (
-        <div className="settings-panel">
-          <div className="settings-header">
-            <h3>Configuration</h3>
-            <button className="icon-btn" style={{ width: 22, height: 22 }} onClick={() => setShowSettings(false)}>✕</button>
-          </div>
-          <div className="settings-body">
-            <label>Gemini API Key</label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Enter your Gemini API Key..."
-            />
-            <div className="settings-actions">
-              <button
-                className="btn-secondary"
-                onClick={() => setApiKey(DEFAULT_API_KEY)}
-              >
-                Reset Default
-              </button>
-              <button
-                className="btn-primary"
-                onClick={() => handleSaveApiKey(apiKey)}
-              >
-                Save
-              </button>
+      {currentView === 'settings' ? (
+        <div className="settings-view-container">
+          {/* Hero Lock Status Card */}
+          <div className="settings-hero-card">
+            <div className="settings-lock-icon-wrapper">
+              <Lock size={20} className="settings-lock-icon" />
             </div>
+            <h3 className="settings-hero-title">
+              {usedMessages >= totalMessages
+                ? `You've used your ${totalMessages} free messages`
+                : `${totalMessages - usedMessages} free messages remaining`}
+            </h3>
+            <p className="settings-hero-subtitle">
+              Enter a license key to keep solving. Your history and settings stay as they are.
+            </p>
           </div>
-        </div>
-      )}
 
-      {/* License Modal */}
-      {showLicenseModal && (
-        <div className="settings-panel">
-          <div className="settings-header">
-            <h3>Activate License</h3>
-            <button className="icon-btn" style={{ width: 22, height: 22 }} onClick={() => setShowLicenseModal(false)}>✕</button>
+          {/* License Key Input Form */}
+          <div className="settings-license-form">
+            <label className="settings-field-label">LICENSE KEY</label>
+            <div className="settings-input-row">
+              <input
+                type="text"
+                className="settings-license-input"
+                value={licenseKey}
+                onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
+                placeholder="XXXX-XXXX-XXXX-XXXX"
+                spellCheck={false}
+              />
+            </div>
+            <button
+              className={`btn-activate-license ${licenseSuccess ? 'activated' : ''}`}
+              onClick={handleActivateLicense}
+              disabled={!licenseKey.trim()}
+            >
+              <Check size={16} strokeWidth={2.5} />
+              <span>{licenseSuccess ? 'License Activated!' : 'Activate license'}</span>
+            </button>
+            {licenseSuccess && (
+              <div className="settings-license-badge-success">
+                Unlimited solving unlocked! Returning to solver...
+              </div>
+            )}
           </div>
-          <div className="settings-body">
-            <label>License Key</label>
-            <input
-              type="text"
-              value={licenseKey}
-              onChange={(e) => setLicenseKey(e.target.value)}
-              placeholder="XXXX-XXXX-XXXX-XXXX"
-            />
-            <div className="settings-actions">
-              <button
-                className="btn-primary"
-                style={{ width: '100%' }}
-                onClick={handleActivateLicense}
+
+          {/* Divider */}
+          <div className="settings-divider">
+            <span className="settings-divider-line"></span>
+            <span className="settings-divider-text">Don't have a key?</span>
+            <span className="settings-divider-line"></span>
+          </div>
+
+          {/* Contact Support Card */}
+          <div className="settings-contact-card">
+            <h4 className="settings-contact-title">Get a license key</h4>
+            <p className="settings-contact-desc">
+              Message us and we'll send you a key. We usually reply in under an hour.
+            </p>
+
+            <div className="settings-contact-buttons">
+              <a
+                href={DISCORD_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-contact-pill btn-discord"
               >
-                {licenseSuccess ? '✓ License Activated!' : 'Activate License'}
-              </button>
+                <MessageCircle size={15} />
+                <span>Discord</span>
+              </a>
+              <a
+                href={`mailto:${SUPPORT_EMAIL}?subject=Requesting%20License%20Key`}
+                className="btn-contact-pill btn-email"
+              >
+                <Mail size={15} />
+                <span>Email</span>
+              </a>
+            </div>
+
+            <div className="settings-contact-footer">
+              Or email us directly at <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
+            </div>
+          </div>
+
+          {/* Advanced Settings (Custom Gemini Key & Double-Click toggle) */}
+          <div className="settings-advanced-card">
+            <div className="settings-advanced-header">ADVANCED CONFIGURATION</div>
+            <div className="settings-advanced-body">
+              <label className="settings-field-label">CUSTOM GEMINI API KEY</label>
+              <input
+                type="password"
+                className="settings-license-input settings-api-input"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="Enter custom Gemini API key..."
+              />
+              <div className="settings-api-actions">
+                <button
+                  type="button"
+                  className="btn-api-reset"
+                  onClick={() => {
+                    setApiKey(DEFAULT_API_KEY);
+                    saveStorage('gemini_api_key', DEFAULT_API_KEY);
+                  }}
+                >
+                  Reset Default
+                </button>
+                <button
+                  type="button"
+                  className="btn-api-save"
+                  onClick={() => handleSaveApiKey(apiKey)}
+                >
+                  {apiKeySaved ? 'Saved!' : 'Save Key'}
+                </button>
+              </div>
+
+              <div className="settings-pref-row" style={{ marginTop: '12px' }}>
+                <label className="switch-wrapper">
+                  <input
+                    type="checkbox"
+                    className="switch-input"
+                    checked={enableDoubleClick}
+                    onChange={(e) => handleToggleDoubleClick(e.target.checked)}
+                  />
+                  <span className="switch-slider"></span>
+                </label>
+                <div className="settings-pref-text">
+                  <span className="settings-pref-title">Enable Double-Click Question Solver</span>
+                  <span className="settings-pref-desc">Double-clicking on questions solves them immediately</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer Quota Card in Settings View */}
+          <div className="footer-quota-card" style={{ marginTop: 'auto' }}>
+            <div className="quota-header">
+              <span className="quota-title">Free messages</span>
+              <span className="quota-count">{usedMessages} / {totalMessages}</span>
+            </div>
+            <div className="quota-progress-track">
+              <div
+                className="quota-progress-fill"
+                style={{ width: `${Math.min(100, (usedMessages / totalMessages) * 100)}%` }}
+              ></div>
+            </div>
+            <div className="quota-footer">
+              <span className="quota-left">{Math.max(0, totalMessages - usedMessages)} left</span>
+              <span className="quota-status-label">{usedMessages >= totalMessages ? 'Quota reached' : 'Active trial'}</span>
             </div>
           </div>
         </div>
-      )}
+      ) : (
+        /* MAIN SOLVER VIEW */
+        <>
 
       {/* Mode Segmented Tab Pane */}
       <div className="modes" role="tablist" aria-label="Mode" data-active-mode={solverMode}>
@@ -589,42 +747,28 @@ ${rawText.substring(0, 35000)}`;
         </button>
       </div>
 
-      {/* Hero Action Pill Buttons (Image 1 & 2 Style) */}
-      <div className="hero-action-group">
-        <button
-          className={`btn-hero-primary ${isScanning ? 'scanning' : ''}`}
-          onClick={handleStartExtraction}
-          disabled={isScanning}
-          title="Scan and solve all questions on active page"
-        >
-          {isScanning ? (
-            <>
-              <div className="spinner"></div>
-              <span>
-                {scanStep === 'scrolling' && 'Auto-Scrolling Page...'}
-                {scanStep === 'ai_processing' && 'Solving with Gemini AI...'}
-                {scanStep === 'autofilling' && 'Auto-Filling Live Page...'}
-                {!scanStep && 'Scanning Page...'}
-              </span>
-            </>
-          ) : (
-            <>
-              <Zap size={16} fill="currentColor" />
-              <span>
-                {solverMode === 'invisible' ? 'SILENT SOLVE ALL' : solverMode === 'stealth' ? 'SOLVE ALL (STEALTH)' : 'SOLVE ALL & EXPLAIN'}
-              </span>
-            </>
-          )}
-        </button>
+      {/* Snip Region Hero Card (Exact User Design) */}
+      <div className="snip-hero-card">
+        <div className="snip-hero-header">
+          <div className="snip-hero-icon-box">
+            <Crop size={20} color="#3DDC97" strokeWidth={2.2} />
+          </div>
+          <div className="snip-hero-text">
+            <h4>Snip a region</h4>
+            <p>Drag a box over a diagram, an image or text you can't select.</p>
+          </div>
+        </div>
 
         <button
-          className="btn-hero-snip"
+          className="btn-launch-snip"
           onClick={handleTriggerSnip}
           title="Drag and snip any question, formula or diagram (Alt + S)"
         >
-          <Crop size={15} />
-          <span>ACTIVATE SCREENSHOT TOOL</span>
-          <span className="kbd-pill">Alt + S</span>
+          <span>Launch snip tool</span>
+          <div className="snip-kbd-group">
+            <kbd className="snip-kbd">Alt</kbd>
+            <kbd className="snip-kbd">S</kbd>
+          </div>
         </button>
       </div>
 
@@ -671,23 +815,6 @@ ${rawText.substring(0, 35000)}`;
               </label>
               <span className="compact-toggle-label">Copy Answer to Clipboard</span>
               <span className="info-icon" title="Silently copies the exact answer text to clipboard on solve">ⓘ</span>
-            </div>
-
-            <div className="compact-toggle-row">
-              <label className="switch-wrapper">
-                <input
-                  type="checkbox"
-                  className="switch-input"
-                  checked={invisibleDoubleClick}
-                  onChange={(e) => {
-                    setInvisibleDoubleClick(e.target.checked);
-                    saveStorage('invisible_double_click', e.target.checked);
-                  }}
-                />
-                <span className="switch-slider"></span>
-              </label>
-              <span className="compact-toggle-label">Double-Click Question Solver</span>
-              <span className="info-icon" title="Double-click on any question card silently ticks the answer">ⓘ</span>
             </div>
           </div>
         </>
@@ -749,23 +876,6 @@ ${rawText.substring(0, 35000)}`;
                 Highlight Hint Only (No Fill)
               </span>
               <span className="info-icon" title="Subtly marks the right option with a tick (✓) so you can choose it yourself">ⓘ</span>
-            </div>
-
-            <div className="compact-toggle-row">
-              <label className="switch-wrapper">
-                <input
-                  type="checkbox"
-                  className="switch-input"
-                  checked={stealthDoubleClick}
-                  onChange={(e) => {
-                    setStealthDoubleClick(e.target.checked);
-                    saveStorage('stealth_double_click', e.target.checked);
-                  }}
-                />
-                <span className="switch-slider"></span>
-              </label>
-              <span className="compact-toggle-label">Double-Click Question Solver</span>
-              <span className="info-icon" title="Double-click any question card on your page to get its answer">ⓘ</span>
             </div>
           </div>
         </>
@@ -912,7 +1022,7 @@ ${rawText.substring(0, 35000)}`;
                     onClick={() => copyToClipboard(q.answerText, q.id || idx)}
                     title="Copy Answer"
                   >
-                    {copiedId === (q.id || idx) ? <Check size={13} color="#10b981" /> : <Copy size={13} />}
+                    {copiedId === (q.id || idx) ? <Check size={13} color="#3DDC97" /> : <Copy size={13} />}
                   </button>
                 </div>
 
@@ -976,28 +1086,31 @@ ${rawText.substring(0, 35000)}`;
         </div>
       )}
 
-      {/* Footer Quota Card (as seen in mockup) */}
-      <div className="footer-quota-card">
-        <div className="quota-header">
-          <span className="quota-title">Free messages</span>
-          <span className="quota-count">{usedMessages} / {totalMessages}</span>
-        </div>
-        <div className="quota-progress-track">
-          <div
-            className="quota-progress-fill"
-            style={{ width: `${Math.min(100, (usedMessages / totalMessages) * 100)}%` }}
-          ></div>
-        </div>
-        <div className="quota-footer">
-          <span className="quota-left">{Math.max(0, totalMessages - usedMessages)} left</span>
-          <a
-            className="quota-link"
-            onClick={() => setShowLicenseModal(true)}
-          >
-            Have a license key?
-          </a>
-        </div>
-      </div>
+          {/* Footer Quota Card (as seen in mockup) */}
+          <div className="footer-quota-card">
+            <div className="quota-header">
+              <span className="quota-title">Free messages</span>
+              <span className="quota-count">{usedMessages} / {totalMessages}</span>
+            </div>
+            <div className="quota-progress-track">
+              <div
+                className="quota-progress-fill"
+                style={{ width: `${Math.min(100, (usedMessages / totalMessages) * 100)}%` }}
+              ></div>
+            </div>
+            <div className="quota-footer">
+              <span className="quota-left">{Math.max(0, totalMessages - usedMessages)} left</span>
+              <button
+                type="button"
+                className="quota-link-btn"
+                onClick={() => setCurrentView('settings')}
+              >
+                Have a license key?
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

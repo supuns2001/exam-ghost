@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "React Extension",
+  "name": "ExamGhost",
   "version": "1.0.0",
-  "description": "A modern Chrome Extension built with React & Vite",
+  "description": "ExamGhost - Your intelligent study partner. Solve quizzes, ace exams, and master any subject with AI-powered assistance.",
   "action": {
     "default_popup": "index.html",
     "default_icon": {
@@ -38,5 +38,14 @@
   "host_permissions": [
     "<all_urls>",
     "https://generativelanguage.googleapis.com/*"
-  ]
+  ],
+  "commands": {
+    "trigger_snip": {
+      "suggested_key": {
+        "default": "Alt+S",
+        "mac": "Alt+S"
+      },
+      "description": "Activate Snipping Tool"
+    }
+  }
 }

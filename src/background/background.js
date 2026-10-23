@@ -33,6 +33,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
+// Native Chrome Keyboard Command Listener (Cross-platform: Windows, Mac, Linux)
+if (chrome.commands && chrome.commands.onCommand) {
+  chrome.commands.onCommand.addListener((command) => {
+    if (command === 'trigger_snip') {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs && tabs[0]?.id) {
+          chrome.tabs.sendMessage(tabs[0].id, { action: 'TRIGGER_SNIP_MODE' }).catch(() => {});
+        }
+      });
+    }
+  });
+}
+
 async function handleSolveSingleQuestion(qData) {
   const storage = await chrome.storage.local.get(['gemini_api_key']);
   const apiKey = storage.gemini_api_key || DEFAULT_API_KEY;
